@@ -29,7 +29,9 @@
         this._depthCamera = null;
 
         this._shaders = {};
-        this._viewport = new Array(2);
+        this._viewport = new Array( 2 );
+        this._c = new Array( 3 );
+        this._projectionInfo = new Array( 4 );
 
     };
 
@@ -158,48 +160,68 @@
             this.initDatGUI();
             this.createViewer();
 
-            var root = new osg.Node();
-            var scene = this.createScene();
-
             this.readShaders().then( function () {
 
                 self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.LINEAR, osg.Texture.UNSIGNED_BYTE );
                 self._depthCamera = self.createCameraRTT( self._depthTexture );
-                self._depthCamera.getOrCreateStateSet().setAttributeAndModes( self._shaders.depth );
 
                 var cam = self._depthCamera;
+                cam.getOrCreateStateSet().setAttributeAndModes( self._shaders.depth );
                 //var quad = self.test();
+
+                var root = new osg.Node();
+                var scene = self.createScene();
+
+                root.getOrCreateStateSet().setAttributeAndModes( self._shaders.ssao );
+                root.getOrCreateStateSet().setTextureAttributeAndModes( 0, self._depthTexture );
+                root.getOrCreateStateSet().addUniform( osg.Uniform.createInt( 0, 'uDepthTexture' ) );
 
                 cam.addChild( scene );
 
                 root.addChild( cam );
                 root.addChild( scene );
-                root.getOrCreateStateSet().setAttributeAndModes( self._shaders.ssao );
-                root.getOrCreateStateSet().setTextureAttributeAndModes( 0, self._depthTexture );
-                root.getOrCreateStateSet().addUniform( osg.Uniform.createInt( 0, 'uDepthTexture' ) );
-
                 //root.addChild( quad );
 
                 self._viewer.setSceneData( root );
                 self._viewer.getCamera().setClearColor( [ 0.0, 0.0, 0.0, 0.0 ] );
 
-                var UpdateCallback = function() {
+                var UpdateCallback = function () {
                     this.update = function () {
 
                         var rootCam = self._viewer.getCamera();
+                        var projection = rootCam.getProjectionMatrix();
+
                         osg.mat4.copy( cam.getViewMatrix(), rootCam.getViewMatrix() );
-                        osg.mat4.copy( cam.getProjectionMatrix(), rootCam.getProjectionMatrix() );
+                        osg.mat4.copy( cam.getProjectionMatrix(), projection );
 
-                        self._viewport[0] = cam.getViewport().width();
-                        self._viewport[1] = cam.getViewport().height();
+                        self._viewport[ 0 ] = cam.getViewport().width();
+                        self._viewport[ 1 ] = cam.getViewport().height();
 
+                        var frustum = {};
+                        osg.mat4.getFrustum( frustum, cam.getProjectionMatrix() );
+
+                        var zFar = frustum.zFar;
+                        var zNear = frustum.zNear;
+
+                        self._c[ 0 ] = zNear * zFar;
+                        self._c[ 1 ] = zNear - zFar;
+                        self._c[ 2 ] = zFar;
+
+                        self._projectionInfo[ 0 ] = -2.0 / ( self._viewport[ 0 ] * projection[ 0 ] );
+                        self._projectionInfo[ 1 ] = -2.0 / ( self._viewport[ 1 ] * projection[ 5 ] );
+                        self._projectionInfo[ 2 ] = ( 1.0 - projection[ 8 ] ) / projection[ 0 ];
+                        self._projectionInfo[ 3 ] = ( 1.0 - projection[ 9 ] ) / projection[ 5 ];
+
+                        // Sends uniform to depth and ssao shader
+                        cam.getOrCreateStateSet().addUniform( osg.Uniform.createFloat3( self._c, 'uC' ) );
                         root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat2( self._viewport, 'uViewport' ) );
+                        root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat4( self._projectionInfo, 'uProjectionInfo' ) );
 
                         return true;
                     };
                 };
 
-                cam.addUpdateCallback(new UpdateCallback());
+                cam.addUpdateCallback( new UpdateCallback() );
             } );
 
         },

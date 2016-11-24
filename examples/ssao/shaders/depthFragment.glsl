@@ -2,6 +2,8 @@
 precision highp float;
 #endif
 
+uniform vec3 uC;
+
 vec4 encodeFloatRGBA( float v ) {
    vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
    enc = fract(enc);
@@ -10,6 +12,12 @@ vec4 encodeFloatRGBA( float v ) {
 }
 
 void main( void ) {
-   float z = gl_FragCoord.z;
-   gl_FragColor = encodeFloatRGBA(z);
+   
+   	float d = gl_FragCoord.z;
+
+   	// Converts depth value to camera space
+   	float zC = uC.x / (d * uC.y + uC.z);
+   
+   	//gl_FragColor = encodeFloatRGBA(d);
+   	gl_FragColor = encodeFloatRGBA(zC);
 }
