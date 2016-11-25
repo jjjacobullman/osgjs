@@ -18,6 +18,5 @@ void main( void ) {
    	// Converts depth value to camera space
    	float zC = uC.x / (d * uC.y + uC.z);
    
-   	//gl_FragColor = encodeFloatRGBA(d);
    	gl_FragColor = encodeFloatRGBA(zC);
 }

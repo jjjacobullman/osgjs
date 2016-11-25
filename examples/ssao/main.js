@@ -22,17 +22,25 @@
         ExampleOSGJS.call( this );
 
         this._config = {
-            ssao: true
+            ssao: true,
+            radius: 1.0,
+            bias: 0.01
         };
+
+        this._uniforms = {
+            radius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
+            bias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
+            c: osg.Uniform.createFloat3( new Array( 3 ), 'uC' ),
+            viewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
+            projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' )
+        };
+
+        this._projectionInfo = new Array( 4 );
 
         this._depthTexture = null;
         this._depthCamera = null;
 
         this._shaders = {};
-        this._viewport = new Array( 2 );
-        this._c = new Array( 3 );
-        this._projectionInfo = new Array( 4 );
-
     };
 
     Example.prototype = osg.objectInherit( ExampleOSGJS.prototype, {
@@ -61,6 +69,8 @@
 
             this._viewer.setupManipulator();
             this._viewer.run();
+
+            this._viewer.getCamera().setComputeNearFar( false );
         },
 
         readShaders: function () {
@@ -144,12 +154,28 @@
 
         },
 
+        updateBias: function () {
+            var uniform = this._uniforms.bias;
+            var value = this._config.bias;
+            uniform.setFloat( value );
+        },
+
+        updateRadius: function () {
+            var uniform = this._uniforms.radius;
+            var value = this._config.radius;
+            uniform.setFloat( value );
+        },
+
         initDatGUI: function () {
 
             this._gui = new window.dat.GUI();
             var gui = this._gui;
 
             gui.add( this._config, 'ssao' );
+            gui.add( this._config, 'radius', 0.01, 100.0 )
+                .onChange( this.updateRadius.bind( this ) );
+            gui.add( this._config, 'bias', 0.01, 5.0 )
+                .onChange( this.updateBias.bind( this ) );
 
         },
 
@@ -166,24 +192,28 @@
                 self._depthCamera = self.createCameraRTT( self._depthTexture );
 
                 var cam = self._depthCamera;
-                cam.getOrCreateStateSet().setAttributeAndModes( self._shaders.depth );
-                //var quad = self.test();
+                cam.setComputeNearFar( false );
+                var stateSetCam = cam.getOrCreateStateSet();
+                stateSetCam.setAttributeAndModes( self._shaders.depth );
+                stateSetCam.addUniform( self._uniforms.c );
 
                 var root = new osg.Node();
+                var stateSetRoot = root.getOrCreateStateSet();
+                stateSetRoot.setAttributeAndModes( self._shaders.ssao );
+                stateSetRoot.setTextureAttributeAndModes( 0, self._depthTexture );
+                stateSetRoot.addUniform( osg.Uniform.createInt( 0, 'uDepthTexture' ) );
+                stateSetRoot.addUniform( self._uniforms.bias );
+                stateSetRoot.addUniform( self._uniforms.radius );
+
                 var scene = self.createScene();
-
-                root.getOrCreateStateSet().setAttributeAndModes( self._shaders.ssao );
-                root.getOrCreateStateSet().setTextureAttributeAndModes( 0, self._depthTexture );
-                root.getOrCreateStateSet().addUniform( osg.Uniform.createInt( 0, 'uDepthTexture' ) );
-
                 cam.addChild( scene );
 
                 root.addChild( cam );
                 root.addChild( scene );
                 //root.addChild( quad );
 
-                self._viewer.setSceneData( root );
                 self._viewer.getCamera().setClearColor( [ 0.0, 0.0, 0.0, 0.0 ] );
+                self._viewer.setSceneData( root );
 
                 var UpdateCallback = function () {
                     this.update = function () {
@@ -194,28 +224,45 @@
                         osg.mat4.copy( cam.getViewMatrix(), rootCam.getViewMatrix() );
                         osg.mat4.copy( cam.getProjectionMatrix(), projection );
 
-                        self._viewport[ 0 ] = cam.getViewport().width();
-                        self._viewport[ 1 ] = cam.getViewport().height();
-
                         var frustum = {};
                         osg.mat4.getFrustum( frustum, cam.getProjectionMatrix() );
+
+                        var width = cam.getViewport().width();
+                        var height = cam.getViewport().height();
 
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
 
-                        self._c[ 0 ] = zNear * zFar;
+                        /*self._c[ 0 ] = zNear * zFar;
                         self._c[ 1 ] = zNear - zFar;
-                        self._c[ 2 ] = zFar;
+                        self._c[ 2 ] = zFar;*/
 
-                        self._projectionInfo[ 0 ] = -2.0 / ( self._viewport[ 0 ] * projection[ 0 ] );
-                        self._projectionInfo[ 1 ] = -2.0 / ( self._viewport[ 1 ] * projection[ 5 ] );
+                        /*self._c[ 0 ] = zNear;
+                        self._c[ 1 ] = -1.0;
+                        self._c[ 2 ] = 1.0;*/
+
+                        // Sends uniform to depth and ssao shader
+                        //cam.getOrCreateStateSet().addUniform( osg.Uniform.createFloat3( self._c, 'uC' ) );
+                        //root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat2( self._viewport, 'uViewport' ) );
+                        //root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat4( self._projectionInfo, 'uProjectionInfo' ) );
+
+                        // Updates SSAO uniforms
+                        self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
+                        self._uniforms.viewport.setFloat2( [ width, height ] );
+
+                        self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] );
+                        self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
                         self._projectionInfo[ 2 ] = ( 1.0 - projection[ 8 ] ) / projection[ 0 ];
                         self._projectionInfo[ 3 ] = ( 1.0 - projection[ 9 ] ) / projection[ 5 ];
 
-                        // Sends uniform to depth and ssao shader
-                        cam.getOrCreateStateSet().addUniform( osg.Uniform.createFloat3( self._c, 'uC' ) );
-                        root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat2( self._viewport, 'uViewport' ) );
-                        root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat4( self._projectionInfo, 'uProjectionInfo' ) );
+                        self._uniforms.projectionInfo.setFloat4( self._projectionInfo );
+
+                        stateSetCam.addUniform( self._uniforms.c );
+
+                        stateSetRoot.addUniform( self._uniforms.bias );
+                        stateSetRoot.addUniform( self._uniforms.radius );
+                        stateSetRoot.addUniform( self._uniforms.viewport );
+                        stateSetRoot.addUniform( self._uniforms.projectionInfo );
 
                         return true;
                     };
