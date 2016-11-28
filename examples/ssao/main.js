@@ -24,12 +24,14 @@
         this._config = {
             ssao: true,
             radius: 1.0,
-            bias: 0.01
+            bias: 0.01,
+            intensity: 1.0
         };
 
         this._uniforms = {
             radius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
             bias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
+            intensity: osg.Uniform.createFloat1( 1.0, 'uIntensityDivRadius6' ),
             c: osg.Uniform.createFloat3( new Array( 3 ), 'uC' ),
             viewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
             projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' )
@@ -164,6 +166,17 @@
             var uniform = this._uniforms.radius;
             var value = this._config.radius;
             uniform.setFloat( value );
+
+            // The intensity is dependent
+            // from the radius
+            this.updateIntensity();
+        },
+
+        updateIntensity: function () {
+            var uniform = this._uniforms.intensity;
+            var intensity = this._config.intensity;
+            var value = intensity / Math.pow(this._config.radius, 6);
+            uniform.setFloat( value );
         },
 
         initDatGUI: function () {
@@ -174,8 +187,10 @@
             gui.add( this._config, 'ssao' );
             gui.add( this._config, 'radius', 0.01, 100.0 )
                 .onChange( this.updateRadius.bind( this ) );
-            gui.add( this._config, 'bias', 0.01, 5.0 )
+            gui.add( this._config, 'bias', 0.01, 0.8 )
                 .onChange( this.updateBias.bind( this ) );
+            gui.add( this._config, 'intensity', 0.01, 5.0 )
+                .onChange( this.updateIntensity.bind( this ) );
 
         },
 
@@ -188,7 +203,8 @@
 
             this.readShaders().then( function () {
 
-                self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.LINEAR, osg.Texture.UNSIGNED_BYTE );
+                //self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.NEAREST, osg.Texture.UNSIGNED_BYTE );
+                self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.NEAREST, osg.Texture.FLOAT );
                 self._depthCamera = self.createCameraRTT( self._depthTexture );
 
                 var cam = self._depthCamera;
@@ -241,11 +257,6 @@
                         self._c[ 1 ] = -1.0;
                         self._c[ 2 ] = 1.0;*/
 
-                        // Sends uniform to depth and ssao shader
-                        //cam.getOrCreateStateSet().addUniform( osg.Uniform.createFloat3( self._c, 'uC' ) );
-                        //root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat2( self._viewport, 'uViewport' ) );
-                        //root.getOrCreateStateSet().addUniform( osg.Uniform.createFloat4( self._projectionInfo, 'uProjectionInfo' ) );
-
                         // Updates SSAO uniforms
                         self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
                         self._uniforms.viewport.setFloat2( [ width, height ] );
@@ -257,8 +268,8 @@
 
                         self._uniforms.projectionInfo.setFloat4( self._projectionInfo );
 
-                        stateSetCam.addUniform( self._uniforms.c );
-
+                        stateSetRoot.addUniform( self._uniforms.c );
+                        stateSetRoot.addUniform( self._uniforms.intensity );
                         stateSetRoot.addUniform( self._uniforms.bias );
                         stateSetRoot.addUniform( self._uniforms.radius );
                         stateSetRoot.addUniform( self._uniforms.viewport );
