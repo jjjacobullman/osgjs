@@ -16,6 +16,31 @@
 
     var shaderProcessor = new osgShader.ShaderProcessor();
 
+    var convertColor = function ( color ) {
+        var r, g, b;
+
+        // rgb [255, 255, 255]
+        if ( color.length === 3 ) {
+            r = color[ 0 ];
+            g = color[ 1 ];
+            b = color[ 2 ];
+
+        } else if ( color.length === 7 ) {
+
+            // hex (24 bits style) '#ffaabb'
+            var intVal = parseInt( color.slice( 1 ), 16 );
+            r = intVal >> 16;
+            g = intVal >> 8 & 0xff;
+            b = intVal & 0xff;
+        }
+
+        var result = [ 0, 0, 0, 1 ];
+        result[ 0 ] = r / 255.0;
+        result[ 1 ] = g / 255.0;
+        result[ 2 ] = b / 255.0;
+        return result;
+    };
+
     // inherits for the ExampleOSGJS prototype
     var Example = function () {
 
@@ -25,7 +50,8 @@
             ssao: true,
             radius: 1.0,
             bias: 0.01,
-            intensity: 1.0
+            intensity: 1.0,
+            sceneColor: '#ECF0F1'
         };
 
         this._uniforms = {
@@ -34,14 +60,13 @@
             intensity: osg.Uniform.createFloat1( 1.0, 'uIntensityDivRadius6' ),
             c: osg.Uniform.createFloat3( new Array( 3 ), 'uC' ),
             viewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
-            projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' )
+            projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
+            sceneColor: osg.Uniform.createFloat4( new Array( 4 ), 'uSceneColor' )
         };
 
         this._projectionInfo = new Array( 4 );
 
         this._depthTexture = null;
-        this._depthCamera = null;
-
         this._renderTextures = [];
 
         this._shaders = {};
@@ -85,8 +110,10 @@
             var shaderNames = [
                 'depthVertex.glsl',
                 'depthFragment.glsl',
-                'ssaoVertex.glsl',
+                'standardVertex.glsl',
+                'standardFragment.glsl',
                 'ssaoFragment.glsl',
+                'blurFragment.glsl'
             ];
 
             var shaders = shaderNames.map( function ( arg ) {
@@ -111,12 +138,13 @@
 
                 self._shaders.depth = new osg.Program(
                     new osg.Shader( 'VERTEX_SHADER', vertexshader ),
-                    new osg.Shader( 'FRAGMENT_SHADER', fragmentshader ) );
+                    new osg.Shader( 'FRAGMENT_SHADER', fragmentshader )
+                );
 
-                vertexshader = shaderProcessor.getShader( 'ssaoVertex.glsl' );
-                fragmentshader = shaderProcessor.getShader( 'ssaoFragment.glsl' );
+                vertexshader = shaderProcessor.getShader( 'standardVertex.glsl' );
+                fragmentshader = shaderProcessor.getShader( 'standardFragment.glsl' );
 
-                self._shaders.ssao = new osg.Program(
+                self._shaders.standard = new osg.Program(
                     new osg.Shader( 'VERTEX_SHADER', vertexshader ),
                     new osg.Shader( 'FRAGMENT_SHADER', fragmentshader ) );
 
@@ -127,30 +155,52 @@
             return defer.promise;
         },
 
-        createComposer: function() {
+        createComposer: function ( rttDepth ) {
             var composer = new osgUtil.Composer();
 
-            // The composer makes 4 passes
-            // 1. depth to texture
-            // 2. noisy AO to texture
-            // 3. horizontal blur inplace on the AO texture
-            // 4. vertical blur inplace on the AO texture
+            // The composer makes 3 passes
+            // 1. noisy AO to texture
+            // 2. horizontal blur inplace on the AO texture
+            // 3. vertical blur inplace on the AO texture
 
-            // Creates depth and ao textures
-            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
-            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, osg.Texture.UNSIGNED_BYTE );
-            this._renderTextures.push(rttDepth, rttAo);
+            // Creates AO textures for each pass
+            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.FLOAT );
+            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.NEAREST, Texture.FLOAT );
+            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.NEAREST, Texture.FLOAT );
 
-            var depthCam = this.createCameraRTT( rttDepth );
-            var aoCam = this.createCameraRTT( rttAo );
+            this._test = rttAoVerticalFilter;
 
+            this._renderTextures.push( rttAo, rttAoHorizontalFilter, rttAoVerticalFilter );
 
+            // Creates the AO pass with depth in entry
+            var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
+            var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._uniforms );
+            aoPass.getStateSet().setTextureAttributeAndModes( 0, rttDepth );
+            aoPass.getStateSet().addUniform( osg.Uniform.createInt1( 0, 'uDepthTexture' ) );
 
-            var aoPass = new osgUtil.Composer.Filter.Custom( this._shaders.ssao, this._uniforms );
+            var blurFragment = shaderProcessor.getShader( 'blurFragment.glsl' );
+
+            // Creates the horizontal blur pass with raw AO in entry
+            var blurHorizontalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._uniforms );
+            blurHorizontalPass.getStateSet().setTextureAttributeAndModes( 0, rttAo );
+            blurHorizontalPass.getStateSet().addUniform( osg.Uniform.createFloat2( [ 1.0, 0.0 ], 'uAxis' ) );
+
+            // Creates the vertical blur pass with raw AO in entry
+            var blurVerticalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._uniforms );
+            blurVerticalPass.getStateSet().setTextureAttributeAndModes( 0, rttAoHorizontalFilter );
+            blurVerticalPass.getStateSet().addUniform( osg.Uniform.createFloat2( [ 0.0, 1.0 ], 'uAxis' ) );
+
+            composer.addPass( aoPass, rttAo );
+            composer.addPass( blurHorizontalPass, rttAoHorizontalFilter );
+            composer.addPass( blurVerticalPass, rttAoVerticalFilter );
 
             composer.build();
             composer.renderToScreen();
 
+            var nodeCompo = new osg.Node();
+            nodeCompo.addChild( composer );
+
+            return nodeCompo;
         },
 
         createTextureRTT: function ( name, filter, type ) {
@@ -177,9 +227,6 @@
             camera.attachTexture( osg.FrameBufferObject.COLOR_ATTACHMENT0, texture, 0 );
 
             camera.setReferenceFrame( osg.Transform.ABSOLUTE_RF );
-            /*camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
-
-            camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );*/
 
             if ( depth ) {
 
@@ -194,6 +241,36 @@
 
 
             return camera;
+
+        },
+
+        createDepthCameraRTT: function ( scene ) {
+
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
+            this._renderTextures.push( rttDepth );
+            this._depthTexture = rttDepth;
+
+            var cam = this.createCameraRTT( rttDepth, true );
+            cam.setComputeNearFar( false );
+            cam.addChild( scene );
+
+            // Set uniform to render depth
+            var stateSetCam = cam.getOrCreateStateSet();
+            stateSetCam.setAttributeAndModes( this._shaders.depth );
+            stateSetCam.addUniform( this._uniforms.c );
+
+            return cam;
+        },
+
+        updateUniforms: function ( stateSet ) {
+
+            var keys = window.Object.keys( this._uniforms );
+
+            for ( var i = 0; i < keys.length; ++i ) {
+
+                stateSet.addUniform( this._uniforms[ keys[ i ] ] );
+
+            }
 
         },
 
@@ -216,8 +293,15 @@
         updateIntensity: function () {
             var uniform = this._uniforms.intensity;
             var intensity = this._config.intensity;
-            var value = intensity / Math.pow(this._config.radius, 6);
+            var value = intensity / Math.pow( this._config.radius, 6 );
             uniform.setFloat( value );
+        },
+
+        updateSceneColor: function () {
+            var color = convertColor( this._config.sceneColor );
+            var uniform = this._uniforms.sceneColor;
+
+            uniform.setFloat4( color );
         },
 
         initDatGUI: function () {
@@ -232,6 +316,8 @@
                 .onChange( this.updateBias.bind( this ) );
             gui.add( this._config, 'intensity', 0.01, 5.0 )
                 .onChange( this.updateIntensity.bind( this ) );
+            gui.addColor( this._config, 'sceneColor' )
+                .onChange( this.updateSceneColor.bind( this ) );
 
         },
 
@@ -244,30 +330,19 @@
 
             this.readShaders().then( function () {
 
-                //self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.NEAREST, osg.Texture.UNSIGNED_BYTE );
-                self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.NEAREST, osg.Texture.FLOAT );
-                self._depthCamera = self.createCameraRTT( self._depthTexture, true );
+                var scene = self.createScene();
+                var cam = self.createDepthCameraRTT( scene );
 
-                var cam = self._depthCamera;
-                cam.setComputeNearFar( false );
-                var stateSetCam = cam.getOrCreateStateSet();
-                stateSetCam.setAttributeAndModes( self._shaders.depth );
-                stateSetCam.addUniform( self._uniforms.c );
+                var composerNode = self.createComposer( self._depthTexture );
 
                 var root = new osg.Node();
                 var stateSetRoot = root.getOrCreateStateSet();
-                stateSetRoot.setAttributeAndModes( self._shaders.ssao );
-                stateSetRoot.setTextureAttributeAndModes( 0, self._depthTexture );
-                stateSetRoot.addUniform( osg.Uniform.createInt( 0, 'uDepthTexture' ) );
-                stateSetRoot.addUniform( self._uniforms.bias );
-                stateSetRoot.addUniform( self._uniforms.radius );
-
-                var scene = self.createScene();
-                cam.addChild( scene );
+                stateSetRoot.setAttributeAndModes( self._shaders.standard );
+                stateSetRoot.setTextureAttributeAndModes( 0, self._test );
 
                 root.addChild( cam );
+                root.addChild( composerNode );
                 root.addChild( scene );
-                //root.addChild( quad );
 
                 self._viewer.getCamera().setClearColor( [ 0.0, 0.0, 0.0, 0.0 ] );
                 self._viewer.setSceneData( root );
@@ -301,12 +376,7 @@
 
                         self._uniforms.projectionInfo.setFloat4( self._projectionInfo );
 
-                        stateSetRoot.addUniform( self._uniforms.c );
-                        stateSetRoot.addUniform( self._uniforms.intensity );
-                        stateSetRoot.addUniform( self._uniforms.bias );
-                        stateSetRoot.addUniform( self._uniforms.radius );
-                        stateSetRoot.addUniform( self._uniforms.viewport );
-                        stateSetRoot.addUniform( self._uniforms.projectionInfo );
+                        self.updateUniforms( stateSetRoot );
 
                         return true;
                     };
@@ -316,22 +386,6 @@
             } );
 
         },
-
-        test: function () {
-            // final Quad
-            var quadSize = [ 16 * 16 / 9, 16 * 1 ];
-            var quad = osg.createTexturedQuadGeometry( -quadSize[ 0 ] / 2.0, 0, -quadSize[ 1 ] / 2.0,
-                quadSize[ 0 ], 0, 0,
-                0, 0, quadSize[ 1 ] );
-
-
-            quad.getOrCreateStateSet().setTextureAttributeAndModes( 0, this._depthTexture );
-            quad.getOrCreateStateSet().setAttributeAndModes( this._shaders.ssao );
-            quad.getOrCreateStateSet().setAttributeAndModes( new osg.CullFace( 'DISABLE' ) );
-            quad.getOrCreateStateSet().addUniform( osg.Uniform.createInt( 0, 'uDepthTexture' ) );
-
-            return quad;
-        }
 
     } );
 

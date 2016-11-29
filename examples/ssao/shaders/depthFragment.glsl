@@ -20,5 +20,6 @@ void main( void ) {
 
 	//gl_FragColor = encodeFloatRGBA(zC);
 	//gl_FragColor = encodeFloatRGBA(d);
+	//gl_FragColor.r = zC;
 	gl_FragColor.r = zC;
 }

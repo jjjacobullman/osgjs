@@ -47,6 +47,13 @@ float decodeFloatRGBA( vec4 rgba ) {
    return dot( rgba, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0) );
 }
 
+vec4 encodeFloatRGBA( float v ) {
+   vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
+   enc = fract(enc);
+   enc -= enc.yzww * vec4(1.0/255.0,1.0/255.0,1.0/255.0,0.0);
+   return enc;
+}
+
 float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
     float x = ssPosition.x / uViewport.x;
@@ -111,6 +118,7 @@ float sampleAO(vec2 screenSpacePx, vec3 camSpacePos, vec3 normal, float diskRadi
 }
 
 void main( void ) {
+    ivec2 pixelPos = ivec2(gl_FragCoord.xy);
     vec3 cameraSpacePosition = reconstructPosition(gl_FragCoord.xy);
     vec3 normal = reconstructNormal(cameraSpacePosition);
 
@@ -120,33 +128,25 @@ void main( void ) {
 
     float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
 
+    // TODO: Unroll the loop
     float contrib = 0.0;
     for (int i = 0; i < NB_SAMPLES; ++i) {
         contrib += sampleAO(gl_FragCoord.xy, cameraSpacePosition, normal, ssRadius, i, randomAngle);
     }
 
-    // DEBUG
-    /*if (uC.y <= -990.0)
-        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-    else if (uC.y < -1.0 && uC.y > -10.0)
-        gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
-    else
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);*/
-    // END DEBUG
-
-    // DEBUG
-    /*float t = zValueFromScreenSpacePosition(gl_FragCoord.xy);
-    gl_FragColor = vec4(t, t, t, 1.0);*/
-    // END DEBUG
-
-    /*float radius2 = 10.0;
-    float temp = radius2 * uRadius;
-    contrib /= temp * temp;*/
-
     float maxSample_float = float(NB_SAMPLES);
-
-    //float aoValue = max(0.0, 1.0 - contrib * 1.0 * (5.0 / maxSample_float));
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
 
-    gl_FragColor = vec4(1.0 * aoValue, 1.0 * aoValue, 1.0 * aoValue, 1.0);
+    if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
+        float evenValue = mod(gl_FragCoord.x, 2.0) == 0.0 ? 0.0 : 1.0;
+        aoValue -= dFdx(aoValue) * (evenValue - 0.5);
+    }
+    if (abs(dFdy(cameraSpacePosition.z)) < 0.02) {
+        float evenValue = mod(gl_FragCoord.y, 2.0) == 0.0 ? 0.0 : 1.0;
+        aoValue -= dFdy(aoValue) * (evenValue - 0.5);
+    }
+
+    //gl_FragColor = encodeFloatRGBA(aoValue);
+    gl_FragColor.r = aoValue;
+    //gl_FragColor = vec4(1.0 * aoValue, 1.0 * aoValue, 1.0 * aoValue, 1.0);
 }
