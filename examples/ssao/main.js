@@ -42,6 +42,8 @@
         this._depthTexture = null;
         this._depthCamera = null;
 
+        this._renderTextures = [];
+
         this._shaders = {};
     };
 
@@ -125,6 +127,32 @@
             return defer.promise;
         },
 
+        createComposer: function() {
+            var composer = new osgUtil.Composer();
+
+            // The composer makes 4 passes
+            // 1. depth to texture
+            // 2. noisy AO to texture
+            // 3. horizontal blur inplace on the AO texture
+            // 4. vertical blur inplace on the AO texture
+
+            // Creates depth and ao textures
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
+            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, osg.Texture.UNSIGNED_BYTE );
+            this._renderTextures.push(rttDepth, rttAo);
+
+            var depthCam = this.createCameraRTT( rttDepth );
+            var aoCam = this.createCameraRTT( rttAo );
+
+
+
+            var aoPass = new osgUtil.Composer.Filter.Custom( this._shaders.ssao, this._uniforms );
+
+            composer.build();
+            composer.renderToScreen();
+
+        },
+
         createTextureRTT: function ( name, filter, type ) {
 
             var texture = new osg.Texture();
@@ -139,7 +167,7 @@
 
         },
 
-        createCameraRTT: function ( texture ) {
+        createCameraRTT: function ( texture, depth ) {
 
             var camera = new osg.Camera();
             camera.setName( 'MainCamera' );
@@ -149,9 +177,22 @@
             camera.attachTexture( osg.FrameBufferObject.COLOR_ATTACHMENT0, texture, 0 );
 
             camera.setReferenceFrame( osg.Transform.ABSOLUTE_RF );
-            camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
+            /*camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
 
-            camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );
+            camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );*/
+
+            if ( depth ) {
+
+                camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
+                camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );
+
+            } else {
+
+                camera.setClearMask( 0 );
+
+            }
+
+
             return camera;
 
         },
@@ -185,7 +226,7 @@
             var gui = this._gui;
 
             gui.add( this._config, 'ssao' );
-            gui.add( this._config, 'radius', 0.01, 100.0 )
+            gui.add( this._config, 'radius', 0.01, 10.0 )
                 .onChange( this.updateRadius.bind( this ) );
             gui.add( this._config, 'bias', 0.01, 0.8 )
                 .onChange( this.updateBias.bind( this ) );
@@ -205,7 +246,7 @@
 
                 //self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.NEAREST, osg.Texture.UNSIGNED_BYTE );
                 self._depthTexture = self.createTextureRTT( 'depthRTT', Texture.NEAREST, osg.Texture.FLOAT );
-                self._depthCamera = self.createCameraRTT( self._depthTexture );
+                self._depthCamera = self.createCameraRTT( self._depthTexture, true );
 
                 var cam = self._depthCamera;
                 cam.setComputeNearFar( false );
@@ -248,14 +289,6 @@
 
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
-
-                        /*self._c[ 0 ] = zNear * zFar;
-                        self._c[ 1 ] = zNear - zFar;
-                        self._c[ 2 ] = zFar;*/
-
-                        /*self._c[ 0 ] = zNear;
-                        self._c[ 1 ] = -1.0;
-                        self._c[ 2 ] = 1.0;*/
 
                         // Updates SSAO uniforms
                         self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );

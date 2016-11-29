@@ -21,6 +21,7 @@ uniform vec2 uViewport;
  * (1.0f + P[1][2]) / P[1][1])
  */
 uniform vec4 uProjectionInfo;
+
 uniform vec3 uC;
 uniform float uRadius;
 uniform float uIntensityDivRadius6;
@@ -115,7 +116,7 @@ void main( void ) {
 
     // TODO: Use random function
     //float randomAngle = (3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10;
-    float randomAngle = hash21(gl_FragCoord.xy);
+    float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 10.0;
 
     float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
 
