@@ -6,7 +6,7 @@ uniform vec2 uViewport;
 uniform sampler2D uAoTexture;
 
 uniform vec4 uSceneColor;
-uniform float aoFactor;
+uniform float uAoFactor;
 
 float decodeFloatRGBA( vec4 rgba ) {
     return dot( rgba, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0) );
@@ -23,8 +23,7 @@ float fetchTextureValue(vec2 ssPosition) {
 }
 
 void main( void ) {
-	float z = fetchTextureValue(gl_FragCoord.xy);
+	float z = (uAoFactor > 0.0) ? uAoFactor * fetchTextureValue(gl_FragCoord.xy) : 1.0;
 
 	gl_FragColor = vec4(uSceneColor.xyz * z, 1.0);
-	//gl_FragColor = texture2D(uDepthTexture, gl_FragCoord.xy / uViewport.xy).rgba;
 }

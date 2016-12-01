@@ -1,3 +1,7 @@
+#ifdef GL_ES
+precision highp float;
+#endif
+
 #define EDGE_SHARPNESS 1.0
 #define SCALE 2.0
 #define FILTER_RADIUS 4
@@ -8,13 +12,17 @@ uniform sampler2D uAoTexture;
 uniform vec2 uViewport;
 uniform vec2 uAxis;
 
-float fetchTextureValue(vec2 ssPosition) {
+vec4 fetchTextureValue(vec2 ssPosition) {
 
     float x = ssPosition.x / uViewport.x;
     float y = ssPosition.y / uViewport.y;
 
     vec2 texCoord = vec2(x, y);
-    return texture2D(uAoTexture, texCoord).r;
+    return texture2D(uAoTexture, texCoord);
+}
+
+float unpackKey(vec2 p) {
+    return p.x * (256.0 / 257.0) + p.y * (1.0 / 257.0);
 }
 
 void main() {
@@ -32,18 +40,37 @@ void main() {
 	#endif
 
 	float totalWeight = gaussian[0];
-	float ao = fetchTextureValue(gl_FragCoord.xy);
+	vec4 tmp = fetchTextureValue(gl_FragCoord.xy);
+
+	float initialZ = unpackKey(tmp.gb);
+
+	// TODO: find why the initialZ is always 1.0
+	float ao = tmp.r;
+	if (initialZ == 1.0) {
+        // Sky pixel (if you aren't using depth keying, disable this test)
+        //gl_FragColor.r = ao;
+        //gl_FragColor.r = 1.0;
+    }
+
 	ao *= gaussian[0];
     // TODO: Unroll the loop
 	for (int r = - FILTER_RADIUS; r <= FILTER_RADIUS; ++r) {
 
 		if (r != 0) {
-			float fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
+			//float fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
+			vec4 fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
+			float z = unpackKey(fetch.gb);
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
-			ao += fetch * weight;
+
+			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
+
+			ao += fetch.r * weight;
             totalWeight += weight;
 		}
 	}
 
-    gl_FragColor.r = ao / (totalWeight + EPSILON);	
+    //gl_FragColor.rgb = vec3(ao / (totalWeight + EPSILON));
+    //gl_FragColor.a = 1.0;
+    gl_FragColor.r = ao / (totalWeight + EPSILON);
+    gl_FragColor.gba = vec3(1.0);
 }

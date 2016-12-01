@@ -6,9 +6,13 @@ precision highp float;
 
 #define MOD2 vec2(443.8975,397.2973)
 
-#define NB_SAMPLES 11
+// Defines used to approximate the occlusion
+//#define NB_SAMPLES 11
+#define NB_SAMPLES 32
 #define NB_SPIRAL_TURNS 10.0
 #define EPSILON 0.01
+
+#define FAR_PLANE_Z (-300.0)
 
 uniform vec2 uViewport;
 
@@ -22,7 +26,7 @@ uniform vec2 uViewport;
  */
 uniform vec4 uProjectionInfo;
 
-uniform vec3 uC;
+//uniform vec3 uC;
 uniform float uRadius;
 uniform float uIntensityDivRadius6;
 uniform float uBias;
@@ -81,10 +85,7 @@ vec3 reconstructNormal(vec3 c) {
 
 vec2 computeOffsetUnitVec(int sampleNumber, float randomAngle, out float screenSpaceRadius) {
 
-    float sampleNumber_float = float(sampleNumber);
-    float maxSample_float = float(NB_SAMPLES);
-
-    float alpha = (sampleNumber_float + 0.5) * (1.0 / maxSample_float);
+    float alpha = (float(sampleNumber) + 0.5) * (1.0 / float(NB_SAMPLES));
     float angle = alpha * (NB_SPIRAL_TURNS * 6.28) + randomAngle;
 
     screenSpaceRadius = alpha;
@@ -97,6 +98,19 @@ vec3 getOffsetedPixelPos(vec2 screenSpacePx, vec2 unitOffset, float screenSpaceR
     vec3 cameraSpacePosition = reconstructPosition(vec2(ssPosition) + vec2(0.5, 0.5));
 
     return cameraSpacePosition;
+}
+
+void packZValue(float z, out vec2 p) {
+
+    float key = clamp(z * (1.0 / FAR_PLANE_Z), 0.0, 1.0);
+
+    // Round to the nearest 1/256.0
+    float temp = floor(key * 256.0);
+
+    // Writes the integer part to the x component
+    // and the fractional part to the y component
+    p.x = temp * (1.0 / 256.0);
+    p.y = key * 256.0 - temp;
 }
 
 float sampleAO(vec2 screenSpacePx, vec3 camSpacePos, vec3 normal, float diskRadius, int i, float randomAngle) {
@@ -117,14 +131,35 @@ float sampleAO(vec2 screenSpacePx, vec3 camSpacePos, vec3 normal, float diskRadi
     return f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
 }
 
+float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
 void main( void ) {
     ivec2 pixelPos = ivec2(gl_FragCoord.xy);
+    
     vec3 cameraSpacePosition = reconstructPosition(gl_FragCoord.xy);
+
+    packZValue(cameraSpacePosition.z, gl_FragColor.gb);
+
     vec3 normal = reconstructNormal(cameraSpacePosition);
 
-    // TODO: Use random function
     //float randomAngle = (3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10;
-    float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 10.0;
+    //float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 100.0;
+    //float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 3.14;
+    float randomAngle = rand(gl_FragCoord.xy / uViewport.xy) * 3.14;
+    
+    /*if (cameraSpacePosition.z >= 10.0)
+        gl_FragColor.r = 1.0;
+    else if (cameraSpacePosition.z < -23.0)
+        gl_FragColor.r = 0.2;
+    else if (cameraSpacePosition.z >= -20.0)
+        gl_FragColor.r = 0.5;
+    else*/
+
+    // TODO: Z seems to be always positive
+    // maybe it is part of the blur problem
+    gl_FragColor.r = cameraSpacePosition.z;
 
     float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
 
@@ -137,16 +172,16 @@ void main( void ) {
     float maxSample_float = float(NB_SAMPLES);
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
 
-    if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
-        float evenValue = mod(gl_FragCoord.x, 2.0) == 0.0 ? 0.0 : 1.0;
+    /*if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
+        float evenValue = mod(gl_FragCoord.x, 2.0);
         aoValue -= dFdx(aoValue) * (evenValue - 0.5);
     }
     if (abs(dFdy(cameraSpacePosition.z)) < 0.02) {
-        float evenValue = mod(gl_FragCoord.y, 2.0) == 0.0 ? 0.0 : 1.0;
+        float evenValue = mod(gl_FragCoord.y, 2.0);
         aoValue -= dFdy(aoValue) * (evenValue - 0.5);
-    }
+    }*/
 
     //gl_FragColor = encodeFloatRGBA(aoValue);
     gl_FragColor.r = aoValue;
-    //gl_FragColor = vec4(1.0 * aoValue, 1.0 * aoValue, 1.0 * aoValue, 1.0);
+    gl_FragColor.a = 1.0;
 }

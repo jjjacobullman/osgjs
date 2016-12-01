@@ -13,13 +13,13 @@ vec4 encodeFloatRGBA( float v ) {
 
 void main( void ) {
    
-   	float d = gl_FragCoord.z;
+   float d = gl_FragCoord.z;
 
-   	// Converts depth value to camera space
-   	float zC = uC.x / (d * uC.y + uC.z);
+   // Converts depth value to camera space
+   float zC = uC.x / (d * uC.y + uC.z);
 
 	//gl_FragColor = encodeFloatRGBA(zC);
 	//gl_FragColor = encodeFloatRGBA(d);
-	//gl_FragColor.r = zC;
-	gl_FragColor.r = zC;
+   gl_FragColor.r = zC;
+   //gl_FragColor.r = d;
 }
