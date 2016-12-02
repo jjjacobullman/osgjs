@@ -49,7 +49,7 @@
         this._config = {
             ssao: true,
             blur: true,
-            radius: 0.7,
+            radius: 1.0,
             bias: 0.01,
             intensity: 0.8,
             sceneColor: '#ECF0F1',
@@ -63,7 +63,7 @@
 
         this._uniforms = {
             ssao: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
-            radius: osg.Uniform.createFloat1( 0.7, 'uRadius' ),
+            radius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
             bias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
             intensity: osg.Uniform.createFloat1( 0.8, 'uIntensityDivRadius6' ),
             c: osg.Uniform.createFloat3( new Array( 3 ), 'uC' ),
@@ -221,17 +221,17 @@
 
             this._uniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._uniforms );
-            aoPass.setVertexShader( vertex );
+            //aoPass.setVertexShader( vertex );
 
             this._blurUniforms.uAoTexture = rttAo;
             this._blurUniforms.uAxis = [ 1.0, 0.0 ];
             var blurHorizontalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._blurUniforms );
-            blurHorizontalPass.setVertexShader( vertex );
+            //blurHorizontalPass.setVertexShader( vertex );
 
             this._blurVerticalUniforms.uAoTexture = rttAoHorizontalFilter;
             this._blurVerticalUniforms.uAxis = [ 0.0, 1.0 ];
             var blurVerticalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._blurVerticalUniforms );
-            blurVerticalPass.setVertexShader( vertex );
+            //blurVerticalPass.setVertexShader( vertex );
 
             this._aoTexture = rttAo;
             this._aoBluredTexture = rttAoVerticalFilter;

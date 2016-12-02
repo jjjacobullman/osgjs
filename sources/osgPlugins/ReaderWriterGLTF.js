@@ -427,6 +427,8 @@ GLTFLoader.prototype = {
         var defer = Promise.defer();
         if ( !glTFTextureId ) return defer.resolve();
 
+        if ( !glTFTextureId ) return defer.resolve();
+
         var texture = new Texture();
 
         var json = this._loadedFiles.glTF;

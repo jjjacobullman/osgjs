@@ -40,6 +40,7 @@ void main() {
 	#endif
 
 	float totalWeight = gaussian[0];
+
 	vec4 tmp = fetchTextureValue(gl_FragCoord.xy);
 
 	float initialZ = unpackKey(tmp.gb);
@@ -48,8 +49,8 @@ void main() {
 	float ao = tmp.r;
 	if (initialZ == 1.0) {
         // Sky pixel (if you aren't using depth keying, disable this test)
-        //gl_FragColor.r = ao;
-        //gl_FragColor.r = 1.0;
+        gl_FragColor.r = ao;
+        return;
     }
 
 	ao *= gaussian[0];
@@ -62,7 +63,7 @@ void main() {
 			float z = unpackKey(fetch.gb);
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
-			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
+			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 20.0) * abs(z - initialZ));
 
 			ao += fetch.r * weight;
             totalWeight += weight;
@@ -71,6 +72,7 @@ void main() {
 
     //gl_FragColor.rgb = vec3(ao / (totalWeight + EPSILON));
     //gl_FragColor.a = 1.0;
-    gl_FragColor.r = ao / (totalWeight + EPSILON);
-    gl_FragColor.gba = vec3(1.0);
+	gl_FragColor.r = ao / (totalWeight + EPSILON);
+    gl_FragColor.gb = tmp.gb;
+    gl_FragColor.a = 1.0;
 }
