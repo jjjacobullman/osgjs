@@ -66,9 +66,11 @@
             radius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
             bias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
             intensity: osg.Uniform.createFloat1( 0.8, 'uIntensityDivRadius6' ),
-            c: osg.Uniform.createFloat3( new Array( 3 ), 'uC' ),
+            near: osg.Uniform.createFloat1( 1.0, 'uNear' ),
+            far: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
             viewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
             projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
+            projectionScale: osg.Uniform.createFloat1( 500.0, 'uProjScale' ),
             sceneColor: osg.Uniform.createFloat4( new Array( 4 ), 'uSceneColor' ),
             uDepthTexture: null
         };
@@ -200,7 +202,7 @@
         createComposer: function ( rttDepth ) {
             var composer = this._composer;
 
-            var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
+            //var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
             var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
             var blurFragment = shaderProcessor.getShader( 'blurFragment.glsl' );
 
@@ -297,7 +299,7 @@
             // Set uniform to render depth
             var stateSetCam = cam.getOrCreateStateSet();
             stateSetCam.setAttributeAndModes( this._shaders.depth );
-            stateSetCam.addUniform( this._uniforms.c );
+            //stateSetCam.addUniform( this._uniforms.c );
             stateSetCam.addUniform( this._uniforms.viewport );
 
             return cam;
@@ -461,18 +463,26 @@
                         var zNear = frustum.zNear;
 
                         // Updates SSAO uniforms
-                        self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
+                        //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
+                        self._uniforms.near.setFloat( zNear );
+                        self._uniforms.far.setFloat( zFar );
                         self._uniforms.viewport.setFloat2( [ width, height ] );
 
-                        self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] );
+                        self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] ); //projection[0][0]
                         self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
                         self._projectionInfo[ 2 ] = ( 1.0 - projection[ 8 ] ) / projection[ 0 ];
-                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 9 ] ) / projection[ 5 ];
+                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 10 ] ) / projection[ 5 ];
+
+                        /*self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] ); //projection[0][0]
+                        self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
+                        self._projectionInfo[ 2 ] = ( 1.0 - projection[ 2 ] ) / projection[ 0 ];
+                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 6 ] ) / projection[ 5 ];*/
 
                         self._uniforms.projectionInfo.setFloat4( self._projectionInfo );
+                        //self._uniforms.projectionScale.setFloat(1.0 / (2.0 * Math.tan(45.0 * 0.5)));
+                        self._uniforms.projectionScale.setFloat((2.0 * Math.tan(45.0 * 0.5)) * 450.0);
 
                         stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
-                        //stateSetRoot.setTextureAttributeAndModes( 0, self._depthTexture );
 
                         return true;
                     };
@@ -521,7 +531,12 @@
 
             if ( !scene ) return;
 
-            self.addScene( sceneName, scene );
+            var mt = new osg.MatrixTransform();
+            osg.mat4.fromRotation( mt.getMatrix(), Math.PI / 2, [ 1, 0, 0 ] );
+
+            mt.addChild(scene);
+
+            self.addScene( sceneName, mt );
         } );
 
     };

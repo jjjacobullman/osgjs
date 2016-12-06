@@ -63,7 +63,9 @@ void main() {
 			float z = unpackKey(fetch.gb);
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
-			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 20.0) * abs(z - initialZ));
+			//weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
+			//float weight = 1.0 / (EPSILON + abs(initialZ - z));
+			weight *= 1.0 / (EPSILON + abs(initialZ - z));
 
 			ao += fetch.r * weight;
             totalWeight += weight;
