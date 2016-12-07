@@ -4,13 +4,15 @@ precision highp float;
 
 #define EDGE_SHARPNESS 1.0
 #define SCALE 2.0
-#define FILTER_RADIUS 4
+#define FILTER_RADIUS 3
 #define EPSILON 0.0001
 
 uniform sampler2D uAoTexture;
 
 uniform vec2 uViewport;
 uniform vec2 uAxis;
+
+uniform float uCrispness;
 
 vec4 fetchTextureValue(vec2 ssPosition) {
 
@@ -40,17 +42,17 @@ void main() {
 	#endif
 
 	float totalWeight = gaussian[0];
-
 	vec4 tmp = fetchTextureValue(gl_FragCoord.xy);
 
-	float initialZ = unpackKey(tmp.gb);
+	//float initialZ = unpackKey(tmp.gb);
+	float initialZ = tmp.g;
 
 	// TODO: find why the initialZ is always 1.0
 	float ao = tmp.r;
 	if (initialZ == 1.0) {
         // Sky pixel (if you aren't using depth keying, disable this test)
-        gl_FragColor.r = ao;
-        return;
+        //gl_FragColor.r = ao;
+        //gl_FragColor.r = 1.0;
     }
 
 	ao *= gaussian[0];
@@ -60,12 +62,11 @@ void main() {
 		if (r != 0) {
 			//float fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
 			vec4 fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
-			float z = unpackKey(fetch.gb);
+			//float z = unpackKey(fetch.gb);
+			float z = fetch.b;
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
-			//weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
-			//float weight = 1.0 / (EPSILON + abs(initialZ - z));
-			weight *= 1.0 / (EPSILON + abs(initialZ - z));
+			weight *= max(0.0, 1.0 - (uCrispness * EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
 
 			ao += fetch.r * weight;
             totalWeight += weight;
@@ -74,7 +75,6 @@ void main() {
 
     //gl_FragColor.rgb = vec3(ao / (totalWeight + EPSILON));
     //gl_FragColor.a = 1.0;
-	gl_FragColor.r = ao / (totalWeight + EPSILON);
-    gl_FragColor.gb = tmp.gb;
-    gl_FragColor.a = 1.0;
+    gl_FragColor.r = ao / (totalWeight + EPSILON);
+    gl_FragColor.gba = vec3(1.0);
 }

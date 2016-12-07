@@ -26,6 +26,7 @@ uniform vec2 uViewport;
  * (1.0f - P[0][2]) / P[0][0]
  * (1.0f + P[1][2]) / P[1][1])
  */
+uniform mat4 uInvProj;
 uniform vec4 uProjectionInfo;
 uniform float uProjScale;
 
@@ -70,8 +71,20 @@ float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
     vec2 texCoord = vec2(x, y);
     float d = texture2D(uDepthTexture, texCoord).r;
-    return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+    //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+    return uNear + (uFar - uNear) * d;
 }
+
+/*vec3 reconstructPosition(vec2 ssPosition){
+    ndcPos.xy = gl_FragCoord.xy / viewportSize;
+    ndcPos.z = z; 
+    ndcPos -= 0.5;
+    ndcPos *= 2.0;
+    vec4 clipPos;
+    clipPos.w = zValueFromScreenSpacePosition(gl_FragCoord.xy);
+    clipPos.xyz = ndcPos * clipPos.w;
+    return  projectionInverse * clipPos;
+}*/
 
 // Computes camera-space position of fragment
 vec3 reconstructPosition(vec2 screenSpacePx, float z) {
@@ -89,6 +102,7 @@ vec3 getPosition(vec2 screenSpacePx) {
 
     // Offset to pixel center
     P = reconstructPosition(vec2(screenSpacePx) + vec2(0.5), P.z);
+    //P = reconstructPosition(vec2(screenSpacePx) + vec2(0.5));
     return P;
 }
 
@@ -111,14 +125,15 @@ vec3 getOffsetedPixelPos(vec2 screenSpacePx, vec2 unitOffset, float screenSpaceR
 
     float z = zValueFromScreenSpacePosition(ssPosition);
     vec3 cameraSpacePosition = reconstructPosition(vec2(ssPosition) + vec2(0.5), z);
+    //vec3 cameraSpacePosition = reconstructPosition(vec2(ssPosition) + vec2(0.5));
 
     return cameraSpacePosition;
 }
 
 void packZValue(float z, out vec2 p) {
 
-    //float key = clamp(z * (1.0 / FAR_PLANE_Z), 0.0, 1.0);
-    float key = z;
+    float key = clamp(z * (1.0 / FAR_PLANE_Z), 0.0, 1.0);
+    //float key = z;
 
     // Round to the nearest 1/256.0
     float temp = floor(key * 256.0);
@@ -170,7 +185,7 @@ void main( void ) {
 
     vec3 cameraSpacePosition = getPosition(gl_FragCoord.xy);
 
-    packZValue(cameraSpacePosition.z, gl_FragColor.gb);
+    //packZValue(cameraSpacePosition.z, gl_FragColor.gb);
 
     vec3 normal = reconstructNormal(cameraSpacePosition);
 
@@ -196,7 +211,7 @@ void main( void ) {
     aoValue = clamp(pow(aoValue, 1.0 + 100.0), 0.0, 1.0); */
     /*if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
         float evenValue = mod(gl_FragCoord.x, 2.0);
-        aoValue -= dFdx(aoValue) * (evenValue - 0.5); == (gl_FragCoord.x & 1 - 0.5)
+        aoValue -= dFdx(aoValue) * (evenValue - 0.5);
     }
     if (abs(dFdy(cameraSpacePosition.z)) < 0.02) {
         float evenValue = mod(gl_FragCoord.y, 2.0);
@@ -205,8 +220,16 @@ void main( void ) {
 
     //gl_FragColor = encodeFloatRGBA(aoValue);
     //gl_FragColor.r = - normal.z;
-    //gl_FragColor.r = zValueFromScreenSpacePosition(gl_FragCoord.xy);
+
+    // DEBUG
+    //float d = zValueFromScreenSpacePosition(gl_FragCoord.xy);
+    //gl_FragColor.r = d;
+    //gl_FragColor.r = texture2D(uDepthTexture, gl_FragCoord.xy / uViewport.xy).r;
+    // END DEBUG
+
     //gl_FragColor.r = mix(aoValue, 1.0, 1.0 - clamp(0.5 * cameraSpacePosition.z, 0.0, 1.0));
+    
     gl_FragColor.r = aoValue;
+    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / FAR_PLANE_Z), 0.0, 1.0);
     gl_FragColor.a = 1.0;
 }

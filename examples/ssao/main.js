@@ -52,6 +52,7 @@
             radius: 1.0,
             bias: 0.01,
             intensity: 0.8,
+            crispness: 1.0,
             sceneColor: '#ECF0F1',
             scene: 'box'
         };
@@ -61,33 +62,40 @@
 
         this._modelsMap = {};
 
-        this._uniforms = {
-            ssao: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
-            radius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
-            bias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
-            intensity: osg.Uniform.createFloat1( 0.8, 'uIntensityDivRadius6' ),
-            near: osg.Uniform.createFloat1( 1.0, 'uNear' ),
-            far: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
-            viewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
-            projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
-            projectionScale: osg.Uniform.createFloat1( 500.0, 'uProjScale' ),
-            sceneColor: osg.Uniform.createFloat4( new Array( 4 ), 'uSceneColor' ),
+        this._standardUniforms = {
+            uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
+            uAoFactor: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
+            uSceneColor: osg.Uniform.createFloat4( new Array( 4 ), 'uSceneColor' ),
+        };
+
+        this._aoUniforms = {
+            uViewport: this._standardUniforms.uViewport,
+            uRadius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
+            uBias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
+            uIntensityDivRadius6: osg.Uniform.createFloat1( 0.8, 'uIntensityDivRadius6' ),
+            uNear: osg.Uniform.createFloat1( 1.0, 'uNear' ),
+            uFar: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
+            uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
+            uProjScale: osg.Uniform.createFloat1( 500.0, 'uProjScale' ),
+            uInvProj: osg.Uniform.createMatrix4( new Array( 16 ), 'uInvProj' ),
             uDepthTexture: null
         };
 
         this._blurUniforms = {
 
-            uViewport: this._uniforms.viewport,
+            uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
-            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' )
+            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' ),
+            uCrispness: osg.Uniform.createFloat1( 1.0, 'uCrispness' )
 
         };
 
         this._blurVerticalUniforms = {
 
-            uViewport: this._uniforms.viewport,
+            uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
-            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' )
+            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' ),
+            uCrispness: this._blurUniforms.uCrispness
 
         };
 
@@ -95,6 +103,9 @@
         this._rttCamera = null;
 
         this._projectionInfo = new Array( 4 );
+        // DEBUG
+        this._invProjection = osg.mat4.create();
+        // END DEBUG
 
         this._depthTexture = null;
         this._currentAoTexture = null;
@@ -143,7 +154,7 @@
             this._viewer.setupManipulator();
             this._viewer.run();
 
-            this._viewer.getCamera().setComputeNearFar( false );
+            this._viewer.getCamera().setComputeNearFar( true );
         },
 
         readShaders: function () {
@@ -202,7 +213,7 @@
         createComposer: function ( rttDepth ) {
             var composer = this._composer;
 
-            //var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
+            var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
             var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
             var blurFragment = shaderProcessor.getShader( 'blurFragment.glsl' );
 
@@ -221,19 +232,19 @@
             this._renderTextures[ 2 ] = rttAoHorizontalFilter;
             this._renderTextures[ 3 ] = rttAoVerticalFilter;
 
-            this._uniforms.uDepthTexture = this._depthTexture;
-            var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._uniforms );
-            //aoPass.setVertexShader( vertex );
+            this._aoUniforms.uDepthTexture = this._depthTexture;
+            var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
+            aoPass.setVertexShader( vertex );
 
             this._blurUniforms.uAoTexture = rttAo;
             this._blurUniforms.uAxis = [ 1.0, 0.0 ];
             var blurHorizontalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._blurUniforms );
-            //blurHorizontalPass.setVertexShader( vertex );
+            blurHorizontalPass.setVertexShader( vertex );
 
             this._blurVerticalUniforms.uAoTexture = rttAoHorizontalFilter;
             this._blurVerticalUniforms.uAxis = [ 0.0, 1.0 ];
             var blurVerticalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._blurVerticalUniforms );
-            //blurVerticalPass.setVertexShader( vertex );
+            blurVerticalPass.setVertexShader( vertex );
 
             this._aoTexture = rttAo;
             this._aoBluredTexture = rttAoVerticalFilter;
@@ -294,31 +305,32 @@
             this._depthTexture = rttDepth;
 
             var cam = this.createCameraRTT( rttDepth, true );
-            cam.setComputeNearFar( false );
+            cam.setComputeNearFar( true );
 
             // Set uniform to render depth
             var stateSetCam = cam.getOrCreateStateSet();
             stateSetCam.setAttributeAndModes( this._shaders.depth );
-            //stateSetCam.addUniform( this._uniforms.c );
-            stateSetCam.addUniform( this._uniforms.viewport );
+            stateSetCam.addUniform( this._aoUniforms.uNear );
+            stateSetCam.addUniform( this._aoUniforms.uFar );
+            stateSetCam.addUniform( this._aoUniforms.uViewport );
 
             return cam;
         },
 
         updateUniforms: function ( stateSet ) {
 
-            var keys = window.Object.keys( this._uniforms );
+            var keys = window.Object.keys( this._standardUniforms );
 
             for ( var i = 0; i < keys.length; ++i ) {
 
-                stateSet.addUniform( this._uniforms[ keys[ i ] ] );
+                stateSet.addUniform( this._standardUniforms[ keys[ i ] ] );
 
             }
 
         },
 
         updateSSAOOnOff: function () {
-            var uniform = this._uniforms.ssao;
+            var uniform = this._standardUniforms.uAoFactor;
             var value = this._config.ssao ? 1.0 : 0.0;
             uniform.setFloat( value );
         },
@@ -329,13 +341,13 @@
         },
 
         updateBias: function () {
-            var uniform = this._uniforms.bias;
+            var uniform = this._aoUniforms.uBias;
             var value = this._config.bias;
             uniform.setFloat( value );
         },
 
         updateRadius: function () {
-            var uniform = this._uniforms.radius;
+            var uniform = this._aoUniforms.uRadius;
             var value = this._config.radius;
             uniform.setFloat( value );
 
@@ -345,15 +357,21 @@
         },
 
         updateIntensity: function () {
-            var uniform = this._uniforms.intensity;
+            var uniform = this._aoUniforms.uIntensityDivRadius6;
             var intensity = this._config.intensity;
             var value = intensity / Math.pow( this._config.radius, 6 );
             uniform.setFloat( value );
         },
 
+        updateCrispness: function() {
+            var uniform = this._blurUniforms.uCrispness;
+            var crispness = this._config.crispness;
+            uniform.setFloat( crispness );  
+        },
+
         updateSceneColor: function () {
             var color = convertColor( this._config.sceneColor );
-            var uniform = this._uniforms.sceneColor;
+            var uniform = this._standardUniforms.uSceneColor;
 
             uniform.setFloat4( color );
         },
@@ -402,6 +420,8 @@
                 .onChange( this.updateBias.bind( this ) );
             gui.add( this._config, 'intensity', 0.01, 5.0 )
                 .onChange( this.updateIntensity.bind( this ) );
+            gui.add( this._config, 'crispness', 0.1, 1000.0 )
+                .onChange( this.updateCrispness.bind( this ) );
             gui.addColor( this._config, 'sceneColor' )
                 .onChange( this.updateSceneColor.bind( this ) );
             gui.add( this._config, 'scene', this._modelList )
@@ -463,24 +483,22 @@
                         var zNear = frustum.zNear;
 
                         // Updates SSAO uniforms
-                        //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
-                        self._uniforms.near.setFloat( zNear );
-                        self._uniforms.far.setFloat( zFar );
-                        self._uniforms.viewport.setFloat2( [ width, height ] );
+                        self._aoUniforms.uNear.setFloat( zNear );
+                        self._aoUniforms.uFar.setFloat( zFar );
+                        self._aoUniforms.uViewport.setFloat2( [ width, height ] );
 
                         self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] ); //projection[0][0]
                         self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
                         self._projectionInfo[ 2 ] = ( 1.0 - projection[ 8 ] ) / projection[ 0 ];
-                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 10 ] ) / projection[ 5 ];
+                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 9 ] ) / projection[ 5 ];
 
-                        /*self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] ); //projection[0][0]
-                        self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
-                        self._projectionInfo[ 2 ] = ( 1.0 - projection[ 2 ] ) / projection[ 0 ];
-                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 6 ] ) / projection[ 5 ];*/
+                        // DEBUG
+                        osg.mat4.invert(self._invProjection, projection);
+                        self._aoUniforms.uInvProj.setMatrix4(self._invProjection);
+                        // END DEBUG
 
-                        self._uniforms.projectionInfo.setFloat4( self._projectionInfo );
-                        //self._uniforms.projectionScale.setFloat(1.0 / (2.0 * Math.tan(45.0 * 0.5)));
-                        self._uniforms.projectionScale.setFloat((2.0 * Math.tan(45.0 * 0.5)) * 450.0);
+                        self._aoUniforms.uProjectionInfo.setFloat4( self._projectionInfo );
+                        self._aoUniforms.uProjScale.setFloat((2.0 * Math.tan(45.0 * 0.5)) * 450.0);
 
                         stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
 

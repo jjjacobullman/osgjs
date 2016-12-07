@@ -2,7 +2,10 @@
 precision highp float;
 #endif
 
-uniform vec3 uC;
+uniform float uNear;
+uniform float uFar;
+
+varying vec4 vViewVertex;
 
 vec4 encodeFloatRGBA( float v ) {
    vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
@@ -28,5 +31,7 @@ void main( void ) {
 	//gl_FragColor = encodeFloatRGBA(zC);
 	//gl_FragColor = encodeFloatRGBA(d);
    //gl_FragColor.r = zC;
-   gl_FragColor.r = d;
+   //gl_FragColor.r = d;
+   //gl_FragColor.r = d;
+   gl_FragColor.r = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
 }
