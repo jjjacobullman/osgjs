@@ -39,6 +39,11 @@ uniform float uBias;
 
 uniform sampler2D uDepthTexture;
 
+// DEBUG
+vec2 focalLength = vec2(1.0/tan(45.0*0.5)*uViewport.y/uViewport.x,1.0/tan(45.0*0.5));
+uniform ivec4 uDebug;
+// END DEBUG
+
 varying vec2 vTexCoord;
 varying vec3 vNormal;
 
@@ -64,27 +69,37 @@ vec4 encodeFloatRGBA( float v ) {
    return enc;
 }
 
-float zValueFromScreenSpacePosition(vec2 ssPosition) {
-
-    float x = ssPosition.x / uViewport.x;
-    float y = ssPosition.y / uViewport.y;
-
-    vec2 texCoord = vec2(x, y);
-    float d = texture2D(uDepthTexture, texCoord).r;
-    //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
-    return uNear + (uFar - uNear) * d;
+// DEBUG
+float linearDepth(float d, float near, float far)
+{
+    d = d * 2.0 - 1.0;
+    vec2 lin = vec2((near-far)/(2.0*near*far),(near+far)/(2.0*near*far));
+    return -1.0/(lin.x*d+lin.y);
 }
 
-/*vec3 reconstructPosition(vec2 ssPosition){
-    ndcPos.xy = gl_FragCoord.xy / viewportSize;
-    ndcPos.z = z; 
-    ndcPos -= 0.5;
-    ndcPos *= 2.0;
-    vec4 clipPos;
-    clipPos.w = zValueFromScreenSpacePosition(gl_FragCoord.xy);
-    clipPos.xyz = ndcPos * clipPos.w;
-    return  projectionInverse * clipPos;
-}*/
+vec3 UVtoViewSpace(vec2 uv, float z)
+{
+    vec2 UVtoViewA = vec2(-2.0/focalLength.x,-2.0/focalLength.y);
+    vec2 UVtoViewB = vec2(1.0/focalLength.x,1.0/focalLength.y);
+    uv = UVtoViewA*uv + UVtoViewB;
+    return vec3(uv*z,z);
+}
+// END DEBUG
+
+float zValueFromScreenSpacePosition(vec2 ssPosition) {
+
+    //float x = ssPosition.x / uViewport.x;
+    //float y = ssPosition.y / uViewport.y;
+
+    //vec2 texCoord = vec2(x, y);
+    vec2 texCoord = ssPosition / uViewport;
+    float d = texture2D(uDepthTexture, texCoord).r;
+    //float z_e = 2.0 * d - 1.0;
+    //float z_e = 2.0 * uNear * uFar / (uFar + uNear - z_n * (uFar - uNear));
+    return uNear + (uFar - uNear) * d;
+    //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+    //return linearDepth
+}
 
 // Computes camera-space position of fragment
 vec3 reconstructPosition(vec2 screenSpacePx, float z) {
@@ -114,8 +129,8 @@ vec2 computeOffsetUnitVec(int sampleNumber, float randomAngle, out float screenS
 
     float alpha = (float(sampleNumber) + 0.5) * (1.0 / float(NB_SAMPLES));
     float angle = alpha * (NB_SPIRAL_TURNS * 6.2831853071795864) + randomAngle;
-
     screenSpaceRadius = alpha;
+
     return vec2(cos(angle), sin(angle));
 }
 
@@ -181,7 +196,6 @@ float rand(vec2 co)
 }
 
 void main( void ) {
-    ivec2 pixelPos = ivec2(gl_FragCoord.xy);
 
     vec3 cameraSpacePosition = getPosition(gl_FragCoord.xy);
 
@@ -189,16 +203,20 @@ void main( void ) {
 
     vec3 normal = reconstructNormal(cameraSpacePosition);
 
+    vec2 pixelPosC = gl_FragCoord.xy;
+    pixelPosC.y = uViewport.y-pixelPosC.y;
     //float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 3.14;
-    float randomAngle = rand(gl_FragCoord.xy / uViewport.xy) * 3.14;
+    //float randomAngle = rand(gl_FragCoord.xy / uViewport.xy) * 3.14;
+    float randomAngle = rand(pixelPosC) * 3.14;
 
-    // TODO: Z seems to be always positive&
+    // TODO: Z seems to be always positive
     // maybe it is part of the blur problem
     //gl_FragColor.r = 1.0 / cameraSpacePosition.z;
 
     //float ssRadius = - 0.5 * uProjScale * uRadius / cameraSpacePosition.z;
     //float ssRadius = uProjeScale * uRadius / max(cameraSpacePosition.z, 0.1);
     float ssRadius = - uProjScale * uRadius / cameraSpacePosition.z;
+    //float ssRadius = 100.0 * focalLength.y * uRadius / cameraSpacePosition.z;
 
     // TODO: Unroll the loop
     float contrib = 0.0;
@@ -230,6 +248,29 @@ void main( void ) {
     //gl_FragColor.r = mix(aoValue, 1.0, 1.0 - clamp(0.5 * cameraSpacePosition.z, 0.0, 1.0));
     
     gl_FragColor.r = aoValue;
+    //gl_FragColor.r = -ssRadius / 100.0;
     gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / FAR_PLANE_Z), 0.0, 1.0);
     gl_FragColor.a = 1.0;
+
+    // DEBUG
+    if (uDebug.x == 1)
+        gl_FragColor.rgb = cameraSpacePosition / vec3(2.0);
+    if (uDebug.y == 1)
+        gl_FragColor.rgb = -normal;
+    if (uDebug.z == 1)
+        gl_FragColor.r = texture2D(uDepthTexture, gl_FragCoord.xy / uViewport.xy).r;
+    if (uDebug.w == 1)
+    {
+        if (-ssRadius > 100.0)
+            gl_FragColor.r = 1.0;
+        else if (-ssRadius > 50.0)
+            gl_FragColor.r = 0.75;
+        else if (-ssRadius > 20.0)
+            gl_FragColor.r = 0.45;
+        else if (-ssRadius > 0.0)
+            gl_FragColor.r = 0.2;
+        else
+            gl_FragColor.r = 0.0;
+    }
+    //  END DEBUG
 }

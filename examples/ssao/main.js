@@ -54,6 +54,10 @@
             intensity: 0.8,
             crispness: 1.0,
             sceneColor: '#ECF0F1',
+            debugDepth: false,
+            debugPosition: false,
+            debugNormal: false,
+            debugRadius: false,
             scene: 'box'
         };
 
@@ -66,6 +70,7 @@
             uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
             uAoFactor: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
             uSceneColor: osg.Uniform.createFloat4( new Array( 4 ), 'uSceneColor' ),
+            uDebug: osg.Uniform.createInt4( [ 0, 0, 0, 0 ], 'uDebug' ), // 0: position, 1: normal, ...
         };
 
         this._aoUniforms = {
@@ -78,7 +83,8 @@
             uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
             uProjScale: osg.Uniform.createFloat1( 500.0, 'uProjScale' ),
             uInvProj: osg.Uniform.createMatrix4( new Array( 16 ), 'uInvProj' ),
-            uDepthTexture: null
+            uDepthTexture: null,
+            uDebugPosition: this._standardUniforms.uDebugPosition
         };
 
         this._blurUniforms = {
@@ -363,10 +369,10 @@
             uniform.setFloat( value );
         },
 
-        updateCrispness: function() {
+        updateCrispness: function () {
             var uniform = this._blurUniforms.uCrispness;
             var crispness = this._config.crispness;
-            uniform.setFloat( crispness );  
+            uniform.setFloat( crispness );
         },
 
         updateSceneColor: function () {
@@ -374,6 +380,34 @@
             var uniform = this._standardUniforms.uSceneColor;
 
             uniform.setFloat4( color );
+        },
+
+        updateDebugDepth: function () {
+            var toggle = this._config.debugDepth ? 1 : 0;
+            var uniform = this._standardUniforms.uDebug;
+
+            uniform.setInt4( [ 0, 0, toggle, 0 ] );
+        },
+
+        updateDebugPosition: function () {
+            var toggle = this._config.debugPosition ? 1 : 0;
+            var uniform = this._standardUniforms.uDebug;
+
+            uniform.setInt4( [ toggle, 0, 0, 0 ] );
+        },
+
+        updateDebugNormal: function () {
+            var toggle = this._config.debugNormal ? 1 : 0;
+            var uniform = this._standardUniforms.uDebug;
+
+            uniform.setInt4( [ 0, toggle, 0, 0 ] );
+        },
+
+        updateDebugRadius: function () {
+            var toggle = this._config.debugRadius ? 1 : 0;
+            var uniform = this._standardUniforms.uDebug;
+
+            uniform.setInt4( [ 0, 0, 0, toggle ] );
         },
 
         updateScene: function () {
@@ -420,10 +454,18 @@
                 .onChange( this.updateBias.bind( this ) );
             gui.add( this._config, 'intensity', 0.01, 5.0 )
                 .onChange( this.updateIntensity.bind( this ) );
-            gui.add( this._config, 'crispness', 0.1, 1000.0 )
+            gui.add( this._config, 'crispness', 1.0, 5000.0 )
                 .onChange( this.updateCrispness.bind( this ) );
             gui.addColor( this._config, 'sceneColor' )
                 .onChange( this.updateSceneColor.bind( this ) );
+            gui.add( this._config, 'debugDepth' )
+                .onChange( this.updateDebugDepth.bind( this ) );
+            gui.add( this._config, 'debugPosition' )
+                .onChange( this.updateDebugPosition.bind( this ) );
+            gui.add( this._config, 'debugNormal' )
+                .onChange( this.updateDebugNormal.bind( this ) );
+            gui.add( this._config, 'debugRadius' )
+                .onChange( this.updateDebugRadius.bind( this ) );
             gui.add( this._config, 'scene', this._modelList )
                 .onChange( this.updateScene.bind( this ) );
 
@@ -482,6 +524,8 @@
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
 
+                        console.log();
+
                         // Updates SSAO uniforms
                         self._aoUniforms.uNear.setFloat( zNear );
                         self._aoUniforms.uFar.setFloat( zFar );
@@ -493,12 +537,12 @@
                         self._projectionInfo[ 3 ] = ( 1.0 + projection[ 9 ] ) / projection[ 5 ];
 
                         // DEBUG
-                        osg.mat4.invert(self._invProjection, projection);
-                        self._aoUniforms.uInvProj.setMatrix4(self._invProjection);
+                        osg.mat4.invert( self._invProjection, projection );
+                        self._aoUniforms.uInvProj.setMatrix4( self._invProjection );
                         // END DEBUG
 
                         self._aoUniforms.uProjectionInfo.setFloat4( self._projectionInfo );
-                        self._aoUniforms.uProjScale.setFloat((2.0 * Math.tan(45.0 * 0.5)) * 450.0);
+                        self._aoUniforms.uProjScale.setFloat( ( 2.0 * Math.tan( 45.0 * 0.5 ) ) * 450.0 );
 
                         stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
 
@@ -552,7 +596,7 @@
             var mt = new osg.MatrixTransform();
             osg.mat4.fromRotation( mt.getMatrix(), Math.PI / 2, [ 1, 0, 0 ] );
 
-            mt.addChild(scene);
+            mt.addChild( scene );
 
             self.addScene( sceneName, mt );
         } );

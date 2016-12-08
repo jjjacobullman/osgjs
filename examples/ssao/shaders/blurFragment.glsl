@@ -63,7 +63,7 @@ void main() {
 			//float fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
 			vec4 fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
 			//float z = unpackKey(fetch.gb);
-			float z = fetch.b;
+			float z = fetch.g;
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
 			weight *= max(0.0, 1.0 - (uCrispness * EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
@@ -76,5 +76,6 @@ void main() {
     //gl_FragColor.rgb = vec3(ao / (totalWeight + EPSILON));
     //gl_FragColor.a = 1.0;
     gl_FragColor.r = ao / (totalWeight + EPSILON);
-    gl_FragColor.gba = vec3(1.0);
+    gl_FragColor.g = tmp.g;
+    //gl_FragColor.gba = vec3(1.0);
 }
