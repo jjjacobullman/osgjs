@@ -1025,6 +1025,9 @@ GLTFLoader.prototype = {
         currentNode.setName( nodeId );
         mat4.copy( currentNode.getMatrix(), this.loadTransform( glTFNode ) );
 
+        if(glTFNode.jointName)
+            this.registerUpdateCallback( nodeId, currentNode );
+
         // Recurses on children before
         // processing the current node
         var promises = [];
@@ -1075,7 +1078,7 @@ GLTFLoader.prototype = {
 
         // Loads solid animations
         // by adding an update callback
-        if ( this._animatedNodes[ nodeId ] )
+        if ( this._animatedNodes[ nodeId ] && !this._bones[ nodeId ] )
             this.registerUpdateCallback( nodeId, currentNode );
 
         if ( !this._skeletons[ nodeId ] )
