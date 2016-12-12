@@ -1,21 +1,6 @@
 ( function () {
     'use strict';
 
-    //  get other js file Classes
-    var ExampleOSGJS = window.ExampleOSGJS;
-
-    var OSG = window.OSG;
-    var osg = OSG.osg;
-    var osgViewer = OSG.osgViewer;
-    var osgShader = OSG.osgShader;
-    var osgUtil = OSG.osgUtil;
-    var Texture = osg.Texture;
-
-    var $ = window.$;
-    var P = window.P;
-
-    var shaderProcessor = new osgShader.ShaderProcessor();
-
     var convertColor = function ( color ) {
         var r, g, b;
 
@@ -41,6 +26,21 @@
         return result;
     };
 
+    //  get other js file Classes
+    var ExampleOSGJS = window.ExampleOSGJS;
+
+    var OSG = window.OSG;
+    var osg = OSG.osg;
+    var osgViewer = OSG.osgViewer;
+    var osgShader = OSG.osgShader;
+    var osgUtil = OSG.osgUtil;
+    var Texture = osg.Texture;
+
+    var $ = window.$;
+    var P = window.P;
+
+    var shaderProcessor = new osgShader.ShaderProcessor();
+
     // inherits for the ExampleOSGJS prototype
     var Example = function () {
 
@@ -61,15 +61,14 @@
             scene: 'box'
         };
 
+        this._modelsMap = {};
         this._modelList = [];
         this._modelList.push( this._config.scene );
-
-        this._modelsMap = {};
 
         this._standardUniforms = {
             uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
             uAoFactor: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
-            uSceneColor: osg.Uniform.createFloat4( new Array( 4 ), 'uSceneColor' ),
+            uSceneColor: osg.Uniform.createFloat4( [1.0, 1.0, 1.0, 1.0], 'uSceneColor' ),
             uDebug: osg.Uniform.createInt4( [ 0, 0, 0, 0 ], 'uDebug' ), // 0: position, 1: normal, ...
         };
 
@@ -82,7 +81,6 @@
             uFar: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
             uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
             uProjScale: osg.Uniform.createFloat1( 500.0, 'uProjScale' ),
-            uInvProj: osg.Uniform.createMatrix4( new Array( 16 ), 'uInvProj' ),
             uDepthTexture: null,
             uDebugPosition: this._standardUniforms.uDebugPosition
         };
@@ -91,8 +89,7 @@
 
             uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
-            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' ),
-            uCrispness: osg.Uniform.createFloat1( 1.0, 'uCrispness' )
+            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' )
 
         };
 
@@ -105,21 +102,24 @@
 
         };
 
-        this._root = null;
-        this._rootScene = new osg.Node();
-        this._rttCamera = null;
+        this._uniforms = {
+            radius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
+            bias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
+            intensity: osg.Uniform.createFloat1( 1.0, 'uIntensityDivRadius6' ),
+            c: osg.Uniform.createFloat3( new Array( 3 ), 'uC' ),
+            viewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
+            projectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' )
+        };
 
         this._projectionInfo = new Array( 4 );
-        // DEBUG
-        this._invProjection = osg.mat4.create();
-        // END DEBUG
 
+        // RTT
         this._depthTexture = null;
-        this._currentAoTexture = null;
-        this._aoTexture = null;
-        this._aoBluredTexture = null;
 
-        this._renderTextures = new Array( 4 );
+        // RTT Cams
+        this._rttCamera = null;
+
+        this._rootScene = null;
 
         this._shaders = {};
     };
@@ -137,24 +137,14 @@
             var box = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 1.0, 1.0, 1.0 );
             box.setName( 'Box' );
 
-            var boxSmall = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 0.5, 0.5, 0.5 );
-
-            var mat = new osg.MatrixTransform();
-            osg.mat4.translate( mat.getMatrix(), mat.getMatrix(), [ 0, 0, 0.5 ] );
-
-            mat.addChild( boxSmall );
             group.addChild( ground );
             group.addChild( box );
-            group.addChild( mat );
-
-            this._modelsMap.box = group;
 
             return group;
         },
 
         createViewer: function () {
             this._canvas = document.getElementById( 'View' );
-
             this._viewer = new osgViewer.Viewer( this._canvas );
             this._viewer.init();
 
@@ -172,10 +162,11 @@
             var shaderNames = [
                 'depthVertex.glsl',
                 'depthFragment.glsl',
+                'ssaoVertex.glsl',
+                'ssaoFragment.glsl',
                 'standardVertex.glsl',
                 'standardFragment.glsl',
-                'ssaoFragment.glsl',
-                'blurFragment.glsl'
+                'blurFragment.glsl',
             ];
 
             var shaders = shaderNames.map( function ( arg ) {
@@ -200,8 +191,7 @@
 
                 self._shaders.depth = new osg.Program(
                     new osg.Shader( 'VERTEX_SHADER', vertexshader ),
-                    new osg.Shader( 'FRAGMENT_SHADER', fragmentshader )
-                );
+                    new osg.Shader( 'FRAGMENT_SHADER', fragmentshader ) );
 
                 vertexshader = shaderProcessor.getShader( 'standardVertex.glsl' );
                 fragmentshader = shaderProcessor.getShader( 'standardFragment.glsl' );
@@ -217,7 +207,70 @@
             return defer.promise;
         },
 
-        createComposer: function ( rttDepth ) {
+        createTextureRTT: function ( name, filter, type ) {
+
+            var texture = new osg.Texture();
+            texture.setInternalFormatType( type );
+            texture.setTextureSize( this._canvas.width, this._canvas.height );
+
+            texture.setInternalFormat( osg.Texture.RGBA );
+            texture.setMinFilter( filter );
+            texture.setMagFilter( filter );
+            texture.setName( name );
+            return texture;
+
+        },
+
+        createCameraRTT: function ( texture, depth ) {
+
+            var camera = new osg.Camera();
+            camera.setName( 'MainCamera' );
+            camera.setViewport( new osg.Viewport( 0, 0, this._canvas.width, this._canvas.height ) );
+
+            camera.setRenderOrder( osg.Camera.PRE_RENDER, 0 );
+            camera.attachTexture( osg.FrameBufferObject.COLOR_ATTACHMENT0, texture, 0 );
+
+            camera.setReferenceFrame( osg.Transform.ABSOLUTE_RF );
+            /*camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
+
+            camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );*/
+
+            if ( depth ) {
+
+                camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
+                camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );
+
+            } else {
+
+                camera.setClearMask( 0 );
+
+            }
+
+
+            return camera;
+
+        },
+
+        createDepthCameraRTT: function () {
+
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
+            this._depthTexture = rttDepth;
+
+            var cam = this.createCameraRTT( rttDepth, true );
+            cam.setComputeNearFar( true );
+
+            // Set uniform to render depth
+            var stateSetCam = cam.getOrCreateStateSet();
+            stateSetCam.setAttributeAndModes( this._shaders.depth );
+            stateSetCam.addUniform( this._aoUniforms.uNear );
+            stateSetCam.addUniform( this._aoUniforms.uFar );
+
+            this._rttCamera = cam;
+            return cam;
+        },
+
+        createComposer: function() {
+
             var composer = new osgUtil.Composer();
 
             var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
@@ -233,11 +286,6 @@
             var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.FLOAT );
             var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.NEAREST, Texture.FLOAT );
             var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.NEAREST, Texture.FLOAT );
-
-            this._renderTextures[ 0 ] = rttDepth;
-            this._renderTextures[ 1 ] = rttAo;
-            this._renderTextures[ 2 ] = rttAoHorizontalFilter;
-            this._renderTextures[ 3 ] = rttAoVerticalFilter;
 
             this._aoUniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
@@ -266,65 +314,6 @@
             return composer;
         },
 
-        createTextureRTT: function ( name, filter, type ) {
-
-            var texture = new osg.Texture();
-            texture.setInternalFormatType( type );
-            texture.setTextureSize( this._canvas.width, this._canvas.height );
-
-            texture.setInternalFormat( osg.Texture.RGBA );
-            texture.setMinFilter( filter );
-            texture.setMagFilter( filter );
-            texture.setName( name );
-            return texture;
-
-        },
-
-        createCameraRTT: function ( texture, depth ) {
-
-            var camera = new osg.Camera();
-            camera.setName( 'MainCamera' );
-            camera.setViewport( new osg.Viewport( 0, 0, this._canvas.width, this._canvas.height ) );
-
-            camera.setRenderOrder( osg.Camera.PRE_RENDER, 0 );
-            camera.attachTexture( osg.FrameBufferObject.COLOR_ATTACHMENT0, texture, 0 );
-
-            camera.setReferenceFrame( osg.Transform.ABSOLUTE_RF );
-
-            if ( depth ) {
-
-                camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
-                camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.0, 0.0 ) );
-
-            } else {
-
-                camera.setClearMask( 0 );
-
-            }
-
-
-            return camera;
-
-        },
-
-        createDepthCameraRTT: function () {
-
-            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
-            this._depthTexture = rttDepth;
-
-            var cam = this.createCameraRTT( rttDepth, true );
-            cam.setComputeNearFar( true );
-
-            // Set uniform to render depth
-            var stateSetCam = cam.getOrCreateStateSet();
-            stateSetCam.setAttributeAndModes( this._shaders.depth );
-            stateSetCam.addUniform( this._aoUniforms.uNear );
-            stateSetCam.addUniform( this._aoUniforms.uFar );
-            stateSetCam.addUniform( this._aoUniforms.uViewport );
-
-            return cam;
-        },
-
         updateUniforms: function ( stateSet ) {
 
             var keys = window.Object.keys( this._standardUniforms );
@@ -348,6 +337,7 @@
             else this._currentAoTexture = this._aoTexture;
         },
 
+
         updateBias: function () {
             var uniform = this._aoUniforms.uBias;
             var value = this._config.bias;
@@ -369,12 +359,6 @@
             var intensity = this._config.intensity;
             var value = intensity / Math.pow( this._config.radius, 6 );
             uniform.setFloat( value );
-        },
-
-        updateCrispness: function () {
-            var uniform = this._blurUniforms.uCrispness;
-            var crispness = this._config.crispness;
-            uniform.setFloat( crispness );
         },
 
         updateSceneColor: function () {
@@ -412,6 +396,114 @@
             uniform.setInt4( [ 0, 0, 0, toggle ] );
         },
 
+        initDatGUI: function () {
+
+            this._gui = new window.dat.GUI();
+            var gui = this._gui;
+
+            gui.add( this._config, 'ssao' )
+                .onChange( this.updateSSAOOnOff.bind( this ) );
+            gui.add( this._config, 'blur' )
+                .onChange( this.updateBlur.bind( this ) );
+            gui.add( this._config, 'radius', 0.01, 10.0 )
+                .onChange( this.updateRadius.bind( this ) );
+            gui.add( this._config, 'bias', 0.01, 0.8 )
+                .onChange( this.updateBias.bind( this ) );
+            gui.add( this._config, 'intensity', 0.01, 5.0 )
+                .onChange( this.updateIntensity.bind( this ) );
+            gui.addColor( this._config, 'sceneColor' )
+                .onChange( this.updateSceneColor.bind( this ) );
+            gui.add( this._config, 'debugDepth' )
+                .onChange( this.updateDebugDepth.bind( this ) );
+            gui.add( this._config, 'debugPosition' )
+                .onChange( this.updateDebugPosition.bind( this ) );
+            gui.add( this._config, 'debugNormal' )
+                .onChange( this.updateDebugNormal.bind( this ) );
+            gui.add( this._config, 'debugRadius' )
+                .onChange( this.updateDebugRadius.bind( this ) );
+            gui.add( this._config, 'scene', this._modelList )
+                .onChange( this.updateScene.bind( this ) );
+
+            this.updateIntensity();
+            this.updateSceneColor();
+
+        },
+
+        run: function () {
+
+            var self = this;
+
+            this.initDatGUI();
+            this.createViewer();
+
+            this.readShaders().then( function () {
+
+                var scene = self.createScene();
+
+                var cam = self.createDepthCameraRTT();
+                cam.addChild( scene );
+
+                self._rootScene = new osg.Node();
+                self._rootScene.addChild(scene);
+
+                var composerNode = new osg.Node();
+                composerNode.addChild( self.createComposer() );
+
+                var root = new osg.Node();
+                root.addChild( cam );
+                root.addChild( composerNode );
+                root.addChild( self._rootScene );
+
+                var stateSetRoot = root.getOrCreateStateSet();
+                stateSetRoot.setAttributeAndModes( self._shaders.standard );
+                self.updateUniforms( stateSetRoot );
+
+                self._viewer.getCamera().setClearColor( [ 0.0, 0.0, 0.0, 0.0 ] );
+                self._viewer.setSceneData( root );
+
+                var UpdateCallback = function () {
+                    this.update = function () {
+
+                        var rootCam = self._viewer.getCamera();
+                        var projection = rootCam.getProjectionMatrix();
+
+                        osg.mat4.copy( cam.getViewMatrix(), rootCam.getViewMatrix() );
+                        osg.mat4.copy( cam.getProjectionMatrix(), projection );
+
+                        var frustum = {};
+                        osg.mat4.getFrustum( frustum, cam.getProjectionMatrix() );
+
+                        var width = cam.getViewport().width();
+                        var height = cam.getViewport().height();
+
+
+                        var zFar = frustum.zFar;
+                        var zNear = frustum.zNear;
+
+                        self._standardUniforms.uViewport.setFloat2( [ width, height ] );
+                        // Updates SSAO uniforms
+                        //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
+                        self._aoUniforms.uNear.setFloat(zNear);
+                        self._aoUniforms.uFar.setFloat(zFar);
+
+                        self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] );
+                        self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
+                        self._projectionInfo[ 2 ] = ( 1.0 - projection[ 8 ] ) / projection[ 0 ];
+                        self._projectionInfo[ 3 ] = ( 1.0 - projection[ 9 ] ) / projection[ 5 ];
+
+                        self._aoUniforms.uProjectionInfo.setFloat4( self._projectionInfo );
+
+                        stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
+
+                        return true;
+                    };
+                };
+
+                cam.addUpdateCallback( new UpdateCallback() );
+            } );
+
+        },
+
         updateScene: function () {
 
             var sceneId = this._config.scene;
@@ -438,142 +530,6 @@
                 .onChange( this.updateScene.bind( this ) );
 
             this.updateScene();
-
-        },
-
-        initDatGUI: function () {
-
-            this._gui = new window.dat.GUI();
-            var gui = this._gui;
-
-            gui.add( this._config, 'ssao' )
-                .onChange( this.updateSSAOOnOff.bind( this ) );
-            gui.add( this._config, 'blur' )
-                .onChange( this.updateBlur.bind( this ) );
-            gui.add( this._config, 'radius', 0.01, 10.0 )
-                .onChange( this.updateRadius.bind( this ) );
-            gui.add( this._config, 'bias', 0.01, 0.8 )
-                .onChange( this.updateBias.bind( this ) );
-            gui.add( this._config, 'intensity', 0.01, 5.0 )
-                .onChange( this.updateIntensity.bind( this ) );
-            gui.add( this._config, 'crispness', 1.0, 5000.0 )
-                .onChange( this.updateCrispness.bind( this ) );
-            gui.addColor( this._config, 'sceneColor' )
-                .onChange( this.updateSceneColor.bind( this ) );
-            gui.add( this._config, 'debugDepth' )
-                .onChange( this.updateDebugDepth.bind( this ) );
-            gui.add( this._config, 'debugPosition' )
-                .onChange( this.updateDebugPosition.bind( this ) );
-            gui.add( this._config, 'debugNormal' )
-                .onChange( this.updateDebugNormal.bind( this ) );
-            gui.add( this._config, 'debugRadius' )
-                .onChange( this.updateDebugRadius.bind( this ) );
-            gui.add( this._config, 'scene', this._modelList )
-                .onChange( this.updateScene.bind( this ) );
-
-            this.updateIntensity();
-            this.updateSceneColor();
-
-        },
-
-        resizeScene: function() {
-
-            this._root.removeChildren();
-
-            // Updates the depth RTT camera
-            var depthCam = this.createDepthCameraRTT();
-            this._rttCamera = depthCam;
-
-            // Recreates the composer
-            this.createComposer( depthCam );
-            var composerNode = new osg.Node();
-            composerNode.addChild( this.createComposer() );
-
-            this._root.addChild( this._rttCamera );
-            this._root.addChild( composerNode );
-            this._root.addChild( this._rootScene );
-
-        },
-
-        run: function () {
-
-            var self = this;
-
-            this.initDatGUI();
-            this.createViewer();
-
-            this.readShaders().then( function () {
-
-                var scene = self.createScene();
-
-                self._rttCamera = self.createDepthCameraRTT();
-                self._rttCamera.addChild( scene );
-
-                self.createComposer( self._depthTexture );
-                var composerNode = new osg.Node();
-                composerNode.addChild( self.createComposer() );
-
-                var stateSetRoot = self._rootScene.getOrCreateStateSet();
-                stateSetRoot.setAttributeAndModes( self._shaders.standard );
-                self.updateUniforms( stateSetRoot );
-
-                self._rootScene.addChild( scene );
-
-                self._root = new osg.Node();
-                self._root.addChild( self._rttCamera );
-                self._root.addChild( composerNode );
-                self._root.addChild( self._rootScene );
-
-                self._viewer.getCamera().setClearColor( [ 0.0, 0.0, 0.0, 0.0 ] );
-                self._viewer.setSceneData( self._root );
-
-                var UpdateCallback = function () {
-                    this.update = function () {
-
-                        var rootCam = self._viewer.getCamera();
-                        var projection = rootCam.getProjectionMatrix();
-
-                        osg.mat4.copy( self._rttCamera.getViewMatrix(), rootCam.getViewMatrix() );
-                        osg.mat4.copy( self._rttCamera.getProjectionMatrix(), projection );
-
-                        var frustum = {};
-                        osg.mat4.getFrustum( frustum, self._rttCamera.getProjectionMatrix() );
-
-                        var width = self._canvas.width;
-                        var height = self._canvas.height;
-
-                        var zFar = frustum.zFar;
-                        var zNear = frustum.zNear;
-
-                        //console.log(zNear);
-                        //console.log(zFar);
-
-                        // Updates SSAO uniforms
-                        self._aoUniforms.uNear.setFloat( zNear );
-                        self._aoUniforms.uFar.setFloat( zFar );
-                        self._aoUniforms.uViewport.setFloat2( [ width, height ] );
-
-                        self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] ); //projection[0][0]
-                        self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );
-                        self._projectionInfo[ 2 ] = ( 1.0 - projection[ 8 ] ) / projection[ 0 ];
-                        self._projectionInfo[ 3 ] = ( 1.0 + projection[ 9 ] ) / projection[ 5 ];
-
-                        // DEBUG
-                        osg.mat4.invert( self._invProjection, projection );
-                        self._aoUniforms.uInvProj.setMatrix4( self._invProjection );
-                        // END DEBUG
-
-                        self._aoUniforms.uProjectionInfo.setFloat4( self._projectionInfo );
-                        self._aoUniforms.uProjScale.setFloat( ( 2.0 * Math.tan( 45.0 * 0.5 ) ) * 450.0 );
-
-                        stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
-
-                        return true;
-                    };
-                };
-
-                self._rttCamera.addUpdateCallback( new UpdateCallback() );
-            } );
 
         },
 
@@ -625,18 +581,12 @@
 
     };
 
+
     window.addEventListener( 'load', function () {
         var example = new Example();
         example.run();
-
-        // Adds drag'n'drop feature
         window.addEventListener( 'dragover', dragOverEvent.bind( example ), false );
         window.addEventListener( 'drop', dropEvent.bind( example ), false );
-
-        $(window).resize(function() {
-            //this.resizeScene();
-        }.bind(example));
-
     }, true );
 
 } )();

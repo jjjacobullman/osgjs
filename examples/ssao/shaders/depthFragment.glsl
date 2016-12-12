@@ -5,8 +5,6 @@ precision highp float;
 uniform float uNear;
 uniform float uFar;
 
-varying vec4 vViewVertex;
-
 vec4 encodeFloatRGBA( float v ) {
    vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
    enc = fract(enc);
@@ -14,24 +12,13 @@ vec4 encodeFloatRGBA( float v ) {
    return enc;
 }
 
-void main( void ) {
-   
+float zLinear() {
    float d = gl_FragCoord.z;
+   //zNear * zFar, zNear - zFar, zFar
+   return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+}
 
-   // Converts depth value to camera space
-   //float zC = uC.x / (d * uC.y + uC.z);
-
-   // DEBUG
-   /*if (uC.z >= 40.0)
-      gl_FragColor.r = 1.0;
-   else
-     gl_FragColor.r = zC;*/
-   // END DEBUG
-
-	//gl_FragColor = encodeFloatRGBA(zC);
-	//gl_FragColor = encodeFloatRGBA(d);
-   //gl_FragColor.r = zC;
-   //gl_FragColor.r = d;
-   //gl_FragColor.r = d;
-   gl_FragColor.r = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
+void main( void ) {
+   //gl_FragColor.r = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
+   gl_FragColor.r = zLinear();
 }
