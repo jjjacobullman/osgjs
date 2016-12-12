@@ -24,6 +24,7 @@ var primitiveSet = require( 'osg/primitiveSet' );
 var BufferArray = require( 'osg/BufferArray' );
 var UpdateBone = require( 'osgAnimation/UpdateBone' );
 var UpdateMatrixTransform = require( 'osgAnimation/UpdateMatrixTransform' );
+var DisplayGraph = require( 'osgUtil/DisplayGraph' );
 
 var Uniform = require( 'osg/Uniform' );
 
@@ -1180,9 +1181,14 @@ GLTFLoader.prototype = {
                     root.addUpdateCallback( self._basicAnimationManager );
 
                 return Promise.all( promises ).then( function () {
+                    // Postprocess skeletons
+                    self.postProcessSkeletons( root.getChildren()[ 0 ].getChildren()[ 0 ] );
+                    var displayGraph = DisplayGraph.instance();
+                    displayGraph.setDisplayGraphRenderer( false );
+                    displayGraph.createGraph( root );
 
                     return root;
-
+                    //OSG.osg.mat4.identity(window.activeNode.getMatrix())
                 } );
 
             } );

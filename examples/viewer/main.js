@@ -239,28 +239,29 @@
             var promise = null;
             var fileName = null;
 
-            if ( typeof ( urlOrFiles ) === 'string' ) {
+            /*if ( typeof ( urlOrFiles ) === 'string' ) {
 
                 promise = osgDB.readNodeURL( urlOrFiles );
                 fileName = urlOrFiles.split( '/' ).pop();
 
-            } else if ( urlOrFiles instanceof FileList ) {
+            } else if ( urlOrFiles instanceof FileList ) {*/
 
                 promise = osgDB.Registry.instance().getReaderWriterForExtension( 'gltf' ).readNodeURL( urlOrFiles );
-                for ( var i = 0; i < urlOrFiles.length; ++i ) {
+                /*for ( var i = 0; i < urlOrFiles.length; ++i ) {
 
                     if ( urlOrFiles[ i ].name.indexOf( '.gltf' ) !== -1 ) {
                         fileName = urlOrFiles[ i ].name;
                         break;
                     }
 
-                }
+                }*/
+                fileName = urlOrFiles;
 
-            } else {
+            /*} else {
 
                 return;
 
-            }
+            }*/
 
             this._modelList.push( fileName );
 
@@ -291,9 +292,14 @@
                 var controllers = modelFolder.__controllers;
                 controllers[ controllers.length - 1 ].remove();
                 modelFolder.add( self._config, 'model', self._modelList ).onChange( self.switchModel.bind( self ) );
+
+                if ( Object.keys( self._modelNodeMap ).length > 0 ) {
+                    self._config.model = Object.keys( self._modelNodeMap )[ 0 ];
+                    console.log( 'Autoloading \'', self._config.model, '\'' );
+                    self.switchModel();
+                }
+
             } );
-
-
         },
 
         dragOverEvent: function ( evt ) {
@@ -310,7 +316,6 @@
             var files = evt.dataTransfer.files;
 
             this.loadModel( files );
-
         }
 
     };
@@ -328,6 +333,11 @@
         var dropZone = document.getElementById( 'DropZone' );
         dropZone.addEventListener( 'dragover', example.dragOverEvent.bind( example ), false );
         dropZone.addEventListener( 'drop', example.dropEvent.bind( example ), false );
+
+        var url = 'model.gltf';
+        example.loadModel(url);
+        //var files = [url + 'model.gltf', url + 'model.bin'];
+        // http://glmatrix.net/docs/mat4.js.html
 
     };
 
