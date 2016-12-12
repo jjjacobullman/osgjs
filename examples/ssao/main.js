@@ -105,6 +105,7 @@
 
         };
 
+        this._root = null;
         this._rootScene = new osg.Node();
         this._rttCamera = null;
 
@@ -118,7 +119,6 @@
         this._aoTexture = null;
         this._aoBluredTexture = null;
 
-        this._composer = new osgUtil.Composer();
         this._renderTextures = new Array( 4 );
 
         this._shaders = {};
@@ -154,6 +154,7 @@
 
         createViewer: function () {
             this._canvas = document.getElementById( 'View' );
+
             this._viewer = new osgViewer.Viewer( this._canvas );
             this._viewer.init();
 
@@ -217,7 +218,7 @@
         },
 
         createComposer: function ( rttDepth ) {
-            var composer = this._composer;
+            var composer = new osgUtil.Composer();
 
             var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
             var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
@@ -262,6 +263,7 @@
 
             //composer.renderToScreen( this._canvas.width, this._canvas.height );
             composer.build();
+            return composer;
         },
 
         createTextureRTT: function ( name, filter, type ) {
@@ -474,6 +476,25 @@
 
         },
 
+        resizeScene: function() {
+
+            this._root.removeChildren();
+
+            // Updates the depth RTT camera
+            var depthCam = this.createDepthCameraRTT();
+            this._rttCamera = depthCam;
+
+            // Recreates the composer
+            this.createComposer( depthCam );
+            var composerNode = new osg.Node();
+            composerNode.addChild( this.createComposer() );
+
+            this._root.addChild( this._rttCamera );
+            this._root.addChild( composerNode );
+            this._root.addChild( this._rootScene );
+
+        },
+
         run: function () {
 
             var self = this;
@@ -490,7 +511,7 @@
 
                 self.createComposer( self._depthTexture );
                 var composerNode = new osg.Node();
-                composerNode.addChild( self._composer );
+                composerNode.addChild( self.createComposer() );
 
                 var stateSetRoot = self._rootScene.getOrCreateStateSet();
                 stateSetRoot.setAttributeAndModes( self._shaders.standard );
@@ -498,13 +519,13 @@
 
                 self._rootScene.addChild( scene );
 
-                var root = new osg.Node();
-                root.addChild( self._rttCamera );
-                root.addChild( composerNode );
-                root.addChild( self._rootScene );
+                self._root = new osg.Node();
+                self._root.addChild( self._rttCamera );
+                self._root.addChild( composerNode );
+                self._root.addChild( self._rootScene );
 
                 self._viewer.getCamera().setClearColor( [ 0.0, 0.0, 0.0, 0.0 ] );
-                self._viewer.setSceneData( root );
+                self._viewer.setSceneData( self._root );
 
                 var UpdateCallback = function () {
                     this.update = function () {
@@ -524,7 +545,8 @@
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
 
-                        console.log();
+                        //console.log(zNear);
+                        //console.log(zFar);
 
                         // Updates SSAO uniforms
                         self._aoUniforms.uNear.setFloat( zNear );
@@ -610,6 +632,10 @@
         // Adds drag'n'drop feature
         window.addEventListener( 'dragover', dragOverEvent.bind( example ), false );
         window.addEventListener( 'drop', dropEvent.bind( example ), false );
+
+        $(window).resize(function() {
+            //this.resizeScene();
+        }.bind(example));
 
     }, true );
 

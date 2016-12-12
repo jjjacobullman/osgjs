@@ -205,6 +205,7 @@ void main( void ) {
 
     vec2 pixelPosC = gl_FragCoord.xy;
     pixelPosC.y = uViewport.y-pixelPosC.y;
+    //(3*int(pixelPosC.x)^int(pixelPosC.y)+int(pixelPosC.x)*int(pixelPosC.y))*10.0;
     //float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 3.14;
     //float randomAngle = rand(gl_FragCoord.xy / uViewport.xy) * 3.14;
     float randomAngle = rand(pixelPosC) * 3.14;
@@ -218,6 +219,12 @@ void main( void ) {
     float ssRadius = - uProjScale * uRadius / cameraSpacePosition.z;
     //float ssRadius = 100.0 * focalLength.y * uRadius / cameraSpacePosition.z;
 
+    if (ssRadius > -3.0) {
+        // There is no way to compute AO at this radius
+        gl_FragColor.r = 1.0;
+        return;
+    }
+
     // TODO: Unroll the loop
     float contrib = 0.0;
     for (int i = 0; i < NB_SAMPLES; ++i) {
@@ -225,6 +232,7 @@ void main( void ) {
     }
 
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / float(NB_SAMPLES)));
+    aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
     /*float aoValue = 1.0 - (contrib / float(NB_SAMPLES));
     aoValue = clamp(pow(aoValue, 1.0 + 100.0), 0.0, 1.0); */
     /*if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
@@ -239,16 +247,11 @@ void main( void ) {
     //gl_FragColor = encodeFloatRGBA(aoValue);
     //gl_FragColor.r = - normal.z;
 
-    // DEBUG
-    //float d = zValueFromScreenSpacePosition(gl_FragCoord.xy);
-    //gl_FragColor.r = d;
-    //gl_FragColor.r = texture2D(uDepthTexture, gl_FragCoord.xy / uViewport.xy).r;
-    // END DEBUG
-
     //gl_FragColor.r = mix(aoValue, 1.0, 1.0 - clamp(0.5 * cameraSpacePosition.z, 0.0, 1.0));
     
     gl_FragColor.r = aoValue;
-    //gl_FragColor.r = -ssRadius / 100.0;
+    //gl_FragColor.r = cameraSpacePosition.z / 100.0;
+    //gl_FragColor.r = mix(aoValue, clamp(ssRadius + 3.0, 0.0, 1.0), 1.0);
     gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / FAR_PLANE_Z), 0.0, 1.0);
     gl_FragColor.a = 1.0;
 
