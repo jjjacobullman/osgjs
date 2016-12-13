@@ -58,6 +58,7 @@
             debugPosition: false,
             debugNormal: false,
             debugRadius: false,
+            debugZDistance: 0.0,
             scene: 'box'
         };
 
@@ -68,7 +69,7 @@
         this._standardUniforms = {
             uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
             uAoFactor: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
-            uSceneColor: osg.Uniform.createFloat4( [1.0, 1.0, 1.0, 1.0], 'uSceneColor' ),
+            uSceneColor: osg.Uniform.createFloat4( [ 1.0, 1.0, 1.0, 1.0 ], 'uSceneColor' ),
             uDebug: osg.Uniform.createInt4( [ 0, 0, 0, 0 ], 'uDebug' ), // 0: position, 1: normal, ...
         };
 
@@ -80,7 +81,7 @@
             uNear: osg.Uniform.createFloat1( 1.0, 'uNear' ),
             uFar: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
             uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
-            uProjScale: osg.Uniform.createFloat1( 500.0, 'uProjScale' ),
+            uProjScale: osg.Uniform.createFloat1( 1.0, 'uProjScale' ),
             uDepthTexture: null,
             uDebugPosition: this._standardUniforms.uDebugPosition
         };
@@ -269,7 +270,7 @@
             return cam;
         },
 
-        createComposer: function() {
+        createComposer: function () {
 
             var composer = new osgUtil.Composer();
 
@@ -389,11 +390,11 @@
             uniform.setInt4( [ 0, toggle, 0, 0 ] );
         },
 
-        updateDebugRadius: function () {
-            var toggle = this._config.debugRadius ? 1 : 0;
+        updateDebugZDistance: function () {
+            var value = this._config.debugZDistance;
             var uniform = this._standardUniforms.uDebug;
 
-            uniform.setInt4( [ 0, 0, 0, toggle ] );
+            uniform.setInt4( [ 0, 0, 0, value ] );
         },
 
         initDatGUI: function () {
@@ -419,8 +420,8 @@
                 .onChange( this.updateDebugPosition.bind( this ) );
             gui.add( this._config, 'debugNormal' )
                 .onChange( this.updateDebugNormal.bind( this ) );
-            gui.add( this._config, 'debugRadius' )
-                .onChange( this.updateDebugRadius.bind( this ) );
+            gui.add( this._config, 'debugZDistance' )
+                .onChange( this.updateDebugZDistance.bind( this ), 0.0, 10.0 );
             gui.add( this._config, 'scene', this._modelList )
                 .onChange( this.updateScene.bind( this ) );
 
@@ -439,12 +440,13 @@
             this.readShaders().then( function () {
 
                 var scene = self.createScene();
+                self._modelsMap.box = scene;
 
                 var cam = self.createDepthCameraRTT();
                 cam.addChild( scene );
 
                 self._rootScene = new osg.Node();
-                self._rootScene.addChild(scene);
+                self._rootScene.addChild( scene );
 
                 var composerNode = new osg.Node();
                 composerNode.addChild( self.createComposer() );
@@ -476,15 +478,25 @@
                         var width = cam.getViewport().width();
                         var height = cam.getViewport().height();
 
-
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
 
                         self._standardUniforms.uViewport.setFloat2( [ width, height ] );
                         // Updates SSAO uniforms
                         //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
-                        self._aoUniforms.uNear.setFloat(zNear);
-                        self._aoUniforms.uFar.setFloat(zFar);
+                        self._aoUniforms.uNear.setFloat( zNear );
+                        self._aoUniforms.uFar.setFloat( zFar );
+
+                        // DEBUG
+                        console.log( zNear );
+                        console.log( zFar );
+                        // END DEBUG
+
+                        // Projection scale
+                        var vFov = projection[ 15 ] === 1 ? 1.0 : 2.0 / projection[ 5 ];
+                        var scale = -2.0 * Math.tan( vFov * 0.5 );
+                        var projScale = height / scale;
+                        self._aoUniforms.uProjScale.setFloat( projScale );
 
                         self._projectionInfo[ 0 ] = -2.0 / ( width * projection[ 0 ] );
                         self._projectionInfo[ 1 ] = -2.0 / ( height * projection[ 5 ] );

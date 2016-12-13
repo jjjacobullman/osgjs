@@ -5,6 +5,12 @@ precision highp float;
 uniform float uNear;
 uniform float uFar;
 
+varying vec4 vViewVertex;
+
+// DEBUG
+float initFarMinusNear = 4.804226065180611;
+// END DEBUG
+
 vec4 encodeFloatRGBA( float v ) {
    vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
    enc = fract(enc);
