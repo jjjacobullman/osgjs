@@ -67,7 +67,7 @@
         this._modelList.push( this._config.scene );
 
         this._standardUniforms = {
-            uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
+            uViewport: osg.Uniform.createInt2( new Array( 2 ), 'uViewport' ),
             uAoFactor: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
             uSceneColor: osg.Uniform.createFloat4( [ 1.0, 1.0, 1.0, 1.0 ], 'uSceneColor' ),
             uDebug: osg.Uniform.createInt4( [ 0, 0, 0, 0 ], 'uDebug' ), // 0: position, 1: normal, ...
@@ -481,15 +481,15 @@
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
 
-                        self._standardUniforms.uViewport.setFloat2( [ width, height ] );
+                        self._standardUniforms.uViewport.setInt2( [ width, height ] );
                         // Updates SSAO uniforms
                         //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
                         self._aoUniforms.uNear.setFloat( zNear );
                         self._aoUniforms.uFar.setFloat( zFar );
 
                         // DEBUG
-                        console.log( zNear );
-                        console.log( zFar );
+                        //console.log( zNear );
+                        //console.log( zFar );
                         // END DEBUG
 
                         // Projection scale

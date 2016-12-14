@@ -10,7 +10,7 @@ precision highp float;
 #define NB_SPIRAL_TURNS 10.0
 #define EPSILON 0.001
 
-uniform vec2 uViewport;
+uniform ivec2 uViewport;
 
 /**
  * Contains information to compute
@@ -57,10 +57,7 @@ float decodeFloatRGBA( vec4 rgba ) {
 
 float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
-    float x = ssPosition.x / uViewport.x;
-    float y = ssPosition.y / uViewport.y;
-
-    vec2 texCoord = vec2(x, y);
+    vec2 texCoord = ssPosition / vec2(uViewport);
     float d = texture2D(uDepthTexture, texCoord).r;
     /*float d = decodeFloatRGBA( texture2D(uDepthTexture, texCoord).rgba);
     return uC.x / (d * uC.y + uC.z);*/
@@ -145,7 +142,7 @@ void main( void ) {
 
     // TODO: Use random function
     //float randomAngle = (3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10;
-    float randomAngle = hash21(gl_FragCoord.xy / uViewport.xy) * 10.0;
+    float randomAngle = hash21(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
 
     //float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
     //float ssRadius = 500.0 * uRadius / cameraSpacePosition.z;
@@ -183,7 +180,7 @@ void main( void ) {
     if (uDebug.y == 1)
         gl_FragColor.rgb = -normal;
     if (uDebug.z == 1)
-        gl_FragColor.r = texture2D(uDepthTexture, gl_FragCoord.xy / uViewport.xy).r;
+        gl_FragColor.r = texture2D(uDepthTexture, gl_FragCoord.xy / vec2(uViewport)).r;
     if (uDebug.w != 0)
     {
         gl_FragColor.r = cameraSpacePosition.z / float(uDebug.w);

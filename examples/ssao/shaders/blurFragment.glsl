@@ -9,17 +9,13 @@ precision highp float;
 
 uniform sampler2D uAoTexture;
 
-uniform vec2 uViewport;
+uniform ivec2 uViewport;
 uniform vec2 uAxis;
 
 uniform float uCrispness;
 
 vec4 fetchTextureValue(vec2 ssPosition) {
-
-    float x = ssPosition.x / uViewport.x;
-    float y = ssPosition.y / uViewport.y;
-
-    vec2 texCoord = vec2(x, y);
+    vec2 texCoord = ssPosition / vec2(uViewport);
     return texture2D(uAoTexture, texCoord);
 }
 
