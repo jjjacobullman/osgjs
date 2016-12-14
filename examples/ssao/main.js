@@ -254,7 +254,7 @@
 
         createDepthCameraRTT: function () {
 
-            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.LINEAR, osg.Texture.FLOAT );
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
             this._depthTexture = rttDepth;
 
             var cam = this.createCameraRTT( rttDepth, true );
@@ -285,8 +285,8 @@
 
             // Creates AO textures for each pass
             var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.FLOAT );
-            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.NEAREST, Texture.FLOAT );
-            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.NEAREST, Texture.FLOAT );
+            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.FLOAT );
+            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR, Texture.FLOAT );
 
             this._aoUniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );

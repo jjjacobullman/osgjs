@@ -59,9 +59,7 @@ float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
     vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
     float d = texture2D(uDepthTexture, texCoord).r;
-    /*float d = decodeFloatRGBA( texture2D(uDepthTexture, texCoord).rgba);
-    return uC.x / (d * uC.y + uC.z);*/
-    //return uNear + (uFar - uNear) * d;
+
     return d;
 }
 
@@ -151,6 +149,16 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
     return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
 }
 
+float rand(vec2 co)
+{
+    highp float a = 12.9898;
+    highp float b = 78.233;
+    highp float c = 43758.5453;
+    highp float dt= dot(co.xy ,vec2(a,b));
+    highp float sn= mod(dt,3.14);
+    return fract(sin(sn) * c);
+}
+
 void main( void ) {
     ivec2 ssC = ivec2(gl_FragCoord.xy);
 
@@ -167,11 +175,13 @@ void main( void ) {
 
     // TODO: Use random function
     //float randomAngle = (3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10;
-    float randomAngle = hash21(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
+    //float randomAngle = hash21(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
+    float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 3.14;
 
     //float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
     //float ssRadius = 500.0 * uRadius / cameraSpacePosition.z;
     float ssRadius = - uProjScale * uRadius / cameraSpacePosition.z;
+    //ssRadius *=
 
     /*if (ssRadius < 3.0) {
         // There is no way to compute AO at this radius
