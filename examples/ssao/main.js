@@ -254,7 +254,7 @@
 
         createDepthCameraRTT: function () {
 
-            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.LINEAR, osg.Texture.FLOAT );
             this._depthTexture = rttDepth;
 
             var cam = this.createCameraRTT( rttDepth, true );

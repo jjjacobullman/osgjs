@@ -57,7 +57,7 @@ float decodeFloatRGBA( vec4 rgba ) {
 
 float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
-    vec2 texCoord = ssPosition / vec2(uViewport);
+    vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
     float d = texture2D(uDepthTexture, texCoord).r;
     /*float d = decodeFloatRGBA( texture2D(uDepthTexture, texCoord).rgba);
     return uC.x / (d * uC.y + uC.z);*/
@@ -73,6 +73,22 @@ vec3 reconstructPosition(vec2 screenSpacePx) {
 
     return vec3((pixelPosHalf.xy * uProjectionInfo.xy + uProjectionInfo.zw) * z, z);
 
+}
+
+vec3 reconstructCSPosition(vec2 ssP, float z) {
+    return vec3((ssP.xy * uProjectionInfo.xy + uProjectionInfo.zw) * z, z);
+}
+
+vec3 getPosition(ivec2 ssP) {
+
+    vec2 ssP_float = vec2(ssP);
+
+    vec3 P;
+    P.z = zValueFromScreenSpacePosition(ssP_float);
+
+    // Offset to pixel center
+    P = reconstructCSPosition(ssP_float + vec2(0.5), P.z);
+    return P;
 }
 
 vec3 reconstructNormal(vec3 c) {
@@ -95,22 +111,28 @@ vec2 computeOffsetUnitVec(int sampleNumber, float randomAngle, out float screenS
     return vec2(cos(angle), sin(angle));
 }
 
-vec3 getOffsetedPixelPos(vec2 screenSpacePx, vec2 unitOffset, float screenSpaceRadius) {
+vec3 getOffsetedPixelPos(ivec2 ssC, vec2 unitOffset, float screenSpaceRadius) {
 
-    vec2 ssPosition = screenSpacePx + (unitOffset * screenSpaceRadius);
-    vec3 cameraSpacePosition = reconstructPosition(vec2(ssPosition) + vec2(0.5, 0.5));
+    ivec2 ssP = ivec2(screenSpaceRadius * unitOffset) + ssC;
+    vec2 ssP_float = vec2(ssP);
 
-    return cameraSpacePosition;
+    vec3 P;
+    P.z = zValueFromScreenSpacePosition(ssP_float);
+
+    // Offset to pixel center
+    P = reconstructCSPosition((vec2(ssP) + vec2(0.5)), P.z);
+
+    return P;
 }
 
-float sampleAO(vec2 screenSpacePx, vec3 camSpacePos, vec3 normal, float diskRadius, int i, float randomAngle) {
+float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i, float randomAngle) {
 
     float screenSpaceRadius;
     vec2 offsetUnitVec = computeOffsetUnitVec(i, randomAngle, screenSpaceRadius);
     //screenSpaceRadius *= diskRadius;
     screenSpaceRadius = max(0.75, screenSpaceRadius * diskRadius);
 
-    vec3 occludingPoint = getOffsetedPixelPos(screenSpacePx, offsetUnitVec, screenSpaceRadius);
+    vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
 
     vec3 v = occludingPoint - camSpacePos;
 
@@ -130,7 +152,10 @@ float sampleAO(vec2 screenSpacePx, vec3 camSpacePos, vec3 normal, float diskRadi
 }
 
 void main( void ) {
-    vec3 cameraSpacePosition = reconstructPosition(gl_FragCoord.xy);
+    ivec2 ssC = ivec2(gl_FragCoord.xy);
+
+    //vec3 cameraSpacePosition = reconstructPosition(vec2(ssC));
+    vec3 cameraSpacePosition = getPosition(ssC);
 
     //vec3 normal = reconstructNormal(cameraSpacePosition);
     vec3 normal = reconstructRawNormal(cameraSpacePosition);
@@ -156,7 +181,7 @@ void main( void ) {
 
     float contrib = 0.0;
     for (int i = 0; i < NB_SAMPLES; ++i) {
-        contrib += sampleAO(gl_FragCoord.xy, cameraSpacePosition, normal, ssRadius, i, randomAngle);
+        contrib += sampleAO(ssC, cameraSpacePosition, normal, ssRadius, i, randomAngle);
     }
 
     // DEBUG
