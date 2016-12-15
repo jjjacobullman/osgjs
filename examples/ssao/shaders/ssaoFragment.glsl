@@ -63,16 +63,6 @@ float zValueFromScreenSpacePosition(vec2 ssPosition) {
     return d;
 }
 
-// Computes camera-space position of fragment
-vec3 reconstructPosition(vec2 screenSpacePx) {
-
-    float z = zValueFromScreenSpacePosition(screenSpacePx);
-    vec2 pixelPosHalf = screenSpacePx + vec2(0.5);
-
-    return vec3((pixelPosHalf.xy * uProjectionInfo.xy + uProjectionInfo.zw) * z, z);
-
-}
-
 vec3 reconstructCSPosition(vec2 ssP, float z) {
     return vec3((ssP.xy * uProjectionInfo.xy + uProjectionInfo.zw) * z, z);
 }
@@ -181,13 +171,13 @@ void main( void ) {
     //float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
     //float ssRadius = 500.0 * uRadius / cameraSpacePosition.z;
     float ssRadius = - uProjScale * uRadius / cameraSpacePosition.z;
-    //ssRadius *=
 
-    /*if (ssRadius < 3.0) {
-        // There is no way to compute AO at this radius
+    // EARLY RETURN
+    // Impossible to compute AO, too few pixels concerned by the radius
+    if (ssRadius < 3.0) {
         gl_FragColor.r = 1.0;
         return;
-    }*/
+    }
 
     float contrib = 0.0;
     for (int i = 0; i < NB_SAMPLES; ++i) {
@@ -205,9 +195,14 @@ void main( void ) {
 
     float maxSample_float = float(NB_SAMPLES);
 
-    //float aoValue = max(0.0, 1.0 - contrib * 1.0 * (5.0 / maxSample_float));
+
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
-    gl_FragColor.r = aoValue;
+    aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
+
+    //gl_FragColor.r = aoValue;
+    gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
+    //gl_FragColor.g = cameraSpacePosition.z;
+    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / 300.0), 0.0, 1.0);
 
     // DEBUG
     if (uDebug.x == 1)

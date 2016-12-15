@@ -90,7 +90,8 @@
 
             uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
-            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' )
+            uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
+            uInvRadius: osg.Uniform.createFloat( 1.0, 'uInvRadius' )
 
         };
 
@@ -98,9 +99,8 @@
 
             uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
-            uAxis: osg.Uniform.createFloat2( new Array( 2 ), 'uAxis' ),
-            uCrispness: this._blurUniforms.uCrispness
-
+            uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
+            uInvRadius: this._blurUniforms.uInvRadius
         };
 
         this._uniforms = {
@@ -293,12 +293,12 @@
             aoPass.setVertexShader( vertex );
 
             this._blurUniforms.uAoTexture = rttAo;
-            this._blurUniforms.uAxis = [ 1.0, 0.0 ];
+            this._blurUniforms.uAxis.setInt2( [ 1, 0 ] );
             var blurHorizontalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._blurUniforms );
             blurHorizontalPass.setVertexShader( vertex );
 
             this._blurVerticalUniforms.uAoTexture = rttAoHorizontalFilter;
-            this._blurVerticalUniforms.uAxis = [ 0.0, 1.0 ];
+            this._blurVerticalUniforms.uAxis.setInt2( [ 0, 1 ] );
             var blurVerticalPass = new osgUtil.Composer.Filter.Custom( blurFragment, this._blurVerticalUniforms );
             blurVerticalPass.setVertexShader( vertex );
 
@@ -349,6 +349,9 @@
             var uniform = this._aoUniforms.uRadius;
             var value = this._config.radius;
             uniform.setFloat( value );
+
+            var invRadiusUniform = this._blurUniforms.uInvRadius;
+            invRadiusUniform.setFloat( 1.0 / value );
 
             // The intensity is dependent
             // from the radius
@@ -488,7 +491,7 @@
                         self._aoUniforms.uFar.setFloat( zFar );
 
                         // DEBUG
-                        //console.log( zNear );
+                        //console.log( 'Near = ' + zNear + ' | Far = ' + zFar);
                         //console.log( zFar );
                         // END DEBUG
 

@@ -10,12 +10,11 @@ precision highp float;
 uniform sampler2D uAoTexture;
 
 uniform ivec2 uViewport;
-uniform vec2 uAxis;
-
-uniform float uCrispness;
+uniform ivec2 uAxis;
+uniform float uInvRadius;
 
 vec4 fetchTextureValue(vec2 ssPosition) {
-    vec2 texCoord = ssPosition / vec2(uViewport);
+    vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
     return texture2D(uAoTexture, texCoord);
 }
 
@@ -24,6 +23,8 @@ float unpackKey(vec2 p) {
 }
 
 void main() {
+
+    ivec2 ssC = ivec2(gl_FragCoord.xy);
 
 	float gaussian[FILTER_RADIUS + 1];
 	#if FILTER_RADIUS == 3
@@ -37,41 +38,36 @@ void main() {
     	gaussian[4] = 0.067458; gaussian[5] = 0.050920; gaussian[6] = 0.036108;
 	#endif
 
-	float totalWeight = gaussian[0];
 	vec4 tmp = fetchTextureValue(gl_FragCoord.xy);
-
-	//float initialZ = unpackKey(tmp.gb);
 	float initialZ = tmp.g;
+	float sum = tmp.r;
 
-	// TODO: find why the initialZ is always 1.0
-	float ao = tmp.r;
-	if (initialZ == 1.0) {
-        // Sky pixel (if you aren't using depth keying, disable this test)
-        //gl_FragColor.r = ao;
-        //gl_FragColor.r = 1.0;
-    }
+	float BASE = gaussian[0];
+    float totalWeight = BASE;
+    sum *= totalWeight;
 
-	ao *= gaussian[0];
     // TODO: Unroll the loop
 	for (int r = - FILTER_RADIUS; r <= FILTER_RADIUS; ++r) {
 
 		if (r != 0) {
-			//float fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
-			vec4 fetch = fetchTextureValue(gl_FragCoord.xy + uAxis * (float(r) * SCALE));
+			ivec2 tapLoc = ivec2(vec2(ssC) + vec2(uAxis) * (float(r) * SCALE));
+			vec4 fetch = fetchTextureValue(vec2(tapLoc));
 			//float z = unpackKey(fetch.gb);
 			float z = fetch.g;
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
-			weight *= max(0.0, 1.0 - (uCrispness * EDGE_SHARPNESS * 2000.0) * abs(z - initialZ));
+			float scale = 1.5 * uInvRadius;
+			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(z - initialZ) * scale);
+			//weight *= max(0.0, 1.0 - abs(z - initialZ));
 
-			ao += fetch.r * weight;
+			sum += fetch.r * weight;
             totalWeight += weight;
 		}
 	}
 
     //gl_FragColor.rgb = vec3(ao / (totalWeight + EPSILON));
     //gl_FragColor.a = 1.0;
-    gl_FragColor.r = ao / (totalWeight + EPSILON);
+    gl_FragColor.r = sum / (totalWeight + EPSILON);
     gl_FragColor.g = tmp.g;
     //gl_FragColor.gba = vec3(1.0);
 }
