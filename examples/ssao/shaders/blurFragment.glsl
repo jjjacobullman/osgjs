@@ -12,6 +12,7 @@ uniform sampler2D uAoTexture;
 uniform ivec2 uViewport;
 uniform ivec2 uAxis;
 uniform float uInvRadius;
+uniform float uCrispness;
 
 vec4 fetchTextureValue(vec2 ssPosition) {
     vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
@@ -57,7 +58,7 @@ void main() {
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
 			float scale = 1.5 * uInvRadius;
-			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(z - initialZ) * scale);
+			weight *= max(0.0, 1.0 - (uCrispness * EDGE_SHARPNESS * 2000.0) * abs(z - initialZ) * scale);
 			//weight *= max(0.0, 1.0 - abs(z - initialZ));
 
 			sum += fetch.r * weight;

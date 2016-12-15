@@ -53,7 +53,7 @@
             bias: 0.01,
             intensity: 0.8,
             crispness: 1.0,
-            sceneColor: '#ECF0F1',
+            sceneColor: '#d71515', //'#ECF0F1',
             debugDepth: false,
             debugPosition: false,
             debugNormal: false,
@@ -68,7 +68,7 @@
 
         this._standardUniforms = {
             uViewport: osg.Uniform.createInt2( new Array( 2 ), 'uViewport' ),
-            uAoFactor: osg.Uniform.createFloat1( 1.0, 'uAoFactor' ),
+            uAoFactor: osg.Uniform.createInt1( 1, 'uAoFactor' ),
             uSceneColor: osg.Uniform.createFloat4( [ 1.0, 1.0, 1.0, 1.0 ], 'uSceneColor' ),
             uDebug: osg.Uniform.createInt4( [ 0, 0, 0, 0 ], 'uDebug' ), // 0: position, 1: normal, ...
         };
@@ -91,8 +91,8 @@
             uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
             uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
-            uInvRadius: osg.Uniform.createFloat( 1.0, 'uInvRadius' )
-
+            uInvRadius: osg.Uniform.createFloat( 1.0, 'uInvRadius' ),
+            uCrispness: osg.Uniform.createFloat( 1.0, 'uCrispness' )
         };
 
         this._blurVerticalUniforms = {
@@ -100,7 +100,8 @@
             uViewport: this._standardUniforms.uViewport,
             uAoTexture: null,
             uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
-            uInvRadius: this._blurUniforms.uInvRadius
+            uInvRadius: this._blurUniforms.uInvRadius,
+            uCrispness: this._blurUniforms.uCrispness
         };
 
         this._uniforms = {
@@ -327,35 +328,24 @@
 
         },
 
-        updateSSAOOnOff: function () {
-            var uniform = this._standardUniforms.uAoFactor;
-            var value = this._config.ssao ? 1.0 : 0.0;
+        updateBooleanData: function ( uniform, value ) {
+
+            uniform.setInt( value ? 1 : 0 );
+
+        },
+
+        updateFloatData: function ( uniform, callback, value ) {
+            
             uniform.setFloat( value );
+
+            if (callback)
+                callback();
+
         },
 
         updateBlur: function () {
             if ( this._config.blur ) this._currentAoTexture = this._aoBluredTexture;
             else this._currentAoTexture = this._aoTexture;
-        },
-
-
-        updateBias: function () {
-            var uniform = this._aoUniforms.uBias;
-            var value = this._config.bias;
-            uniform.setFloat( value );
-        },
-
-        updateRadius: function () {
-            var uniform = this._aoUniforms.uRadius;
-            var value = this._config.radius;
-            uniform.setFloat( value );
-
-            var invRadiusUniform = this._blurUniforms.uInvRadius;
-            invRadiusUniform.setFloat( 1.0 / value );
-
-            // The intensity is dependent
-            // from the radius
-            this.updateIntensity();
         },
 
         updateIntensity: function () {
@@ -402,19 +392,25 @@
 
         initDatGUI: function () {
 
+            var self = this;
+
             this._gui = new window.dat.GUI();
             var gui = this._gui;
 
             gui.add( this._config, 'ssao' )
-                .onChange( this.updateSSAOOnOff.bind( this ) );
+                .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
             gui.add( this._config, 'blur' )
                 .onChange( this.updateBlur.bind( this ) );
             gui.add( this._config, 'radius', 0.01, 10.0 )
-                .onChange( this.updateRadius.bind( this ) );
+                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius , function() {
+                    self.updateIntensity();
+                }));
             gui.add( this._config, 'bias', 0.01, 0.8 )
-                .onChange( this.updateBias.bind( this ) );
+                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
             gui.add( this._config, 'intensity', 0.01, 5.0 )
                 .onChange( this.updateIntensity.bind( this ) );
+            gui.add( this._config, 'crispness', 0.0, 3.0 )
+                .onChange( this.updateFloatData.bind( this, this._blurUniforms.uCrispness, null ) );
             gui.addColor( this._config, 'sceneColor' )
                 .onChange( this.updateSceneColor.bind( this ) );
             gui.add( this._config, 'debugDepth' )

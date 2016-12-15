@@ -6,7 +6,7 @@ uniform ivec2 uViewport;
 uniform sampler2D uAoTexture;
 
 uniform vec4 uSceneColor;
-uniform float uAoFactor;
+uniform int uAoFactor;
 
 // DEBUG
 uniform ivec4 uDebug;
@@ -23,7 +23,7 @@ float fetchTextureValue(vec2 ssPosition) {
 }
 
 void main( void ) {
-	float z = (uAoFactor > 0.0) ? uAoFactor * fetchTextureValue(gl_FragCoord.xy) : 1.0;
+	float z = (uAoFactor != 0) ? fetchTextureValue(gl_FragCoord.xy) : 1.0;
 
 	gl_FragColor = vec4(uSceneColor.xyz * z, 1.0);
 
