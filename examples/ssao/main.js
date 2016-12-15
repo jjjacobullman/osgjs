@@ -335,11 +335,11 @@
         },
 
         updateFloatData: function ( uniform, callback, value ) {
-            
+
             uniform.setFloat( value );
 
-            if (callback)
-                callback();
+            if ( callback )
+                callback( value );
 
         },
 
@@ -402,9 +402,13 @@
             gui.add( this._config, 'blur' )
                 .onChange( this.updateBlur.bind( this ) );
             gui.add( this._config, 'radius', 0.01, 10.0 )
-                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius , function() {
+                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius, function ( value ) {
+                    // Blur needs to take the radius into account
+                    var invRadiusUniform = self._blurUniforms.uInvRadius;
+                    invRadiusUniform.setFloat( 1.0 / value );
+                    // Intensity is dependent from the radius
                     self.updateIntensity();
-                }));
+                } ) );
             gui.add( this._config, 'bias', 0.01, 0.8 )
                 .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
             gui.add( this._config, 'intensity', 0.01, 5.0 )

@@ -7,7 +7,27 @@ precision highp float;
 #define MOD2 vec2(443.8975,397.2973)
 
 #define NB_SAMPLES 11
-#define NB_SPIRAL_TURNS 10.0
+
+
+/*
+    1,  1,  1,  2,  3,  2,  5,  2,  3,  2,  // 0
+    3,  3,  5,  5,  3,  4,  7,  5,  5,  7,  // 1
+    9,  8,  5,  5,  7,  7,  7,  8,  5,  8,  // 2
+    11, 12,  7, 10, 13,  8, 11,  8,  7, 14,  // 3
+    11, 11, 13, 12, 13, 19, 17, 13, 11, 18,  // 4
+    19, 11, 11, 14, 17, 21, 15, 16, 17, 18,  // 5
+    29, 21, 19, 27, 31, 29, 21, 18, 17, 29,  // 7
+    13, 17, 11, 17, 19, 18, 25, 18, 19, 19,  // 6
+    31, 31, 23, 18, 25, 26, 25, 23, 19, 34,  // 8
+    19, 27, 21, 25, 39, 29, 17, 21, 27, 29}; // 9
+*/
+
+// Should be a number from the array defined above
+// with index NB_SAMPLES
+#define NB_SPIRAL_TURNS 3.0
+//#define NB_SPIRAL_TURNS 10.0
+
+
 #define EPSILON 0.001
 
 uniform ivec2 uViewport;
@@ -129,12 +149,6 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
 
     float f = max(radius2 - vv, 0.0);
 
-    //return f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
-
-    /*if (vv <= uRadius && (vn <= 1.0 || vn >= -1.0))
-        return 1.0;
-    return 0.0;*/
-
     float ao = f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
     return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
 }
@@ -154,13 +168,14 @@ void main( void ) {
 
     //vec3 cameraSpacePosition = reconstructPosition(vec2(ssC));
     vec3 cameraSpacePosition = getPosition(ssC);
-
-    //vec3 normal = reconstructNormal(cameraSpacePosition);
     vec3 normal = reconstructRawNormal(cameraSpacePosition);
-    if (dot(normal, normal) > pow(cameraSpacePosition.z * cameraSpacePosition.z * 0.00006, 2.0)) {
+
+    // EARLY RETURN
+    // If
+    /*if (dot(normal, normal) > pow(cameraSpacePosition.z * cameraSpacePosition.z * 0.00006, 2.0)) {
         gl_FragColor.r = 1.0;
         return;
-    }
+    }*/
     normal = normalize(normal);
 
     // TODO: Use random function
@@ -195,9 +210,15 @@ void main( void ) {
 
     float maxSample_float = float(NB_SAMPLES);
 
-
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
     aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
+
+    /*if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
+        aoValue -= dFdx(aoValue) * (mod(float(ssC.x), 2.0) - 0.5);
+    }
+    if (abs(dFdy(cameraSpacePosition.z)) < 0.02) {
+        aoValue -= dFdy(aoValue) * (mod(float(ssC.y), 2.0) - 0.5);
+    }*/
 
     //gl_FragColor.r = aoValue;
     gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
