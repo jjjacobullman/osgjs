@@ -6,6 +6,8 @@ precision highp float;
 
 #define MOD2 vec2(443.8975,397.2973)
 
+#define FAR_PLANE 1000.0
+#define EPSILON 0.001
 #define NB_SAMPLES 11
 
 
@@ -23,12 +25,9 @@ precision highp float;
 */
 
 // Should be a number from the array defined above
-// with index NB_SAMPLES
+// with index equals to NB_SAMPLES
 #define NB_SPIRAL_TURNS 3.0
 //#define NB_SPIRAL_TURNS 10.0
-
-
-#define EPSILON 0.001
 
 uniform ivec2 uViewport;
 
@@ -42,6 +41,7 @@ uniform ivec2 uViewport;
  */
 uniform vec4 uProjectionInfo;
 uniform float uProjScale;
+uniform int uFallOfMethod;
 
 uniform float uRadius;
 uniform float uIntensityDivRadius6;
@@ -57,10 +57,9 @@ varying vec3 vNormal;
 
 // DEBUG
 uniform ivec4 uDebug;
-float initFarMinusNear = 4.804226065180611;
 // END DEBUG
 
-float radius2 = uRadius * uRadius;
+float radius2 = 1.0;
 
 //note: normalized uniform random, [0;1[
 //  2 out, 1 in...
@@ -81,6 +80,7 @@ float zValueFromScreenSpacePosition(vec2 ssPosition) {
     float d = texture2D(uDepthTexture, texCoord).r;
 
     return d;
+    //return uNear + (uFar - uNear) * d;
 }
 
 vec3 reconstructCSPosition(vec2 ssP, float z) {
@@ -133,6 +133,33 @@ vec3 getOffsetedPixelPos(ivec2 ssC, vec2 unitOffset, float screenSpaceRadius) {
     return P;
 }
 
+// Default fallOff method
+float fallOffMethod0(float vv, float vn, vec3 normal) {
+
+    // HIGH QUALITY
+    //float invRadius2 = 1.0 / radius2;
+    //float f = max(1.0 - vv * invRadius2, 0.0);
+    //float ao = f * max((vn - uBias) * inversesqrt(EPSILON + vv), 0.0);
+    // END HIGH QUALITY
+
+    float f = max(radius2 - vv, 0.0);
+    float ao = f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
+    return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
+}
+
+float fallOffMethod1(float vv, float vn, vec3 normal) {
+    return float(vv < radius2) * max((vn - uBias) / (EPSILON + vv), 0.0) * radius2 * 0.6;
+}
+
+float fallOffMethod2(float vv, float vn, vec3 normal) {
+    float invRadius2 = 1.0 / radius2;
+    return 4.0 * max(1.0 - vv * invRadius2, 0.0) * max(vn - uBias, 0.0);
+}
+
+float fallOffMethod3(float vv, float vn, vec3 normal) {
+    return 2.0 * float(vv < uRadius * uRadius) * max(vn - uBias, 0.0);
+}
+
 float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i, float randomAngle) {
 
     float screenSpaceRadius;
@@ -147,10 +174,13 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
     float vv = dot(v, v);
     float vn = dot(v, normal);
 
-    float f = max(radius2 - vv, 0.0);
-
-    float ao = f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
-    return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
+    if (uFallOfMethod == 0)
+        return fallOffMethod0(vv, vn, normal);
+    else if (uFallOfMethod == 1)
+        return fallOffMethod1(vv, vn, normal);
+    else if (uFallOfMethod == 2)
+        return fallOffMethod2(vv, vn, normal);
+    return fallOffMethod3(vv, vn, normal);
 }
 
 float rand(vec2 co)
@@ -166,7 +196,6 @@ float rand(vec2 co)
 void main( void ) {
     ivec2 ssC = ivec2(gl_FragCoord.xy);
 
-    //vec3 cameraSpacePosition = reconstructPosition(vec2(ssC));
     vec3 cameraSpacePosition = getPosition(ssC);
     vec3 normal = reconstructRawNormal(cameraSpacePosition);
 
@@ -178,52 +207,36 @@ void main( void ) {
     }*/
     normal = normalize(normal);
 
-    // TODO: Use random function
-    //float randomAngle = (3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10;
     //float randomAngle = hash21(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
     float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 3.14;
+    //float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
 
-    //float ssRadius = - 500.0 * uRadius / cameraSpacePosition.z;
-    //float ssRadius = 500.0 * uRadius / cameraSpacePosition.z;
-    float ssRadius = - uProjScale * uRadius / cameraSpacePosition.z;
-
+    float ssRadius = - uProjScale * uRadius / max(cameraSpacePosition.z, 0.1);
+    //ssRadius = clamp(ssRadius, 0.0, 150.0);
     // EARLY RETURN
     // Impossible to compute AO, too few pixels concerned by the radius
-    if (ssRadius < 3.0) {
+    /*if (ssRadius < 3.0) {
         gl_FragColor.r = 1.0;
         return;
-    }
+    }*/
 
+    radius2 = uRadius * uRadius;
     float contrib = 0.0;
     for (int i = 0; i < NB_SAMPLES; ++i) {
         contrib += sampleAO(ssC, cameraSpacePosition, normal, ssRadius, i, randomAngle);
     }
 
-    // DEBUG
-    /*float t = zValueFromScreenSpacePosition(gl_FragCoord.xy);
-    gl_FragColor = vec4(t, t, t, 1.0);*/
-    // END DEBUG
-
-    /*float radius2 = 10.0;
-    float temp = radius2 * uRadius;
-    contrib /= temp * temp;*/
-
     float maxSample_float = float(NB_SAMPLES);
 
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
-    aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
 
-    /*if (abs(dFdx(cameraSpacePosition.z)) < 0.02) {
-        aoValue -= dFdx(aoValue) * (mod(float(ssC.x), 2.0) - 0.5);
-    }
-    if (abs(dFdy(cameraSpacePosition.z)) < 0.02) {
-        aoValue -= dFdy(aoValue) * (mod(float(ssC.y), 2.0) - 0.5);
-    }*/
+    // Anti-tone map to reduce contrast and drag dark region farther
+    //aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
 
-    //gl_FragColor.r = aoValue;
-    gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
-    //gl_FragColor.g = cameraSpacePosition.z;
-    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / 300.0), 0.0, 1.0);
+    // Fade in as the radius reaches ~0px
+    //gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
+    gl_FragColor.r = aoValue;
+    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / FAR_PLANE), 0.0, 1.0);
 
     // DEBUG
     if (uDebug.x == 1)
@@ -231,11 +244,10 @@ void main( void ) {
     if (uDebug.y == 1)
         gl_FragColor.rgb = -normal;
     if (uDebug.z == 1)
-        gl_FragColor.r = texture2D(uDepthTexture, gl_FragCoord.xy / vec2(uViewport)).r;
+        gl_FragColor.r = texture2D(uDepthTexture, ((gl_FragCoord.xy + 0.25) / vec2(uViewport))).r;
     if (uDebug.w != 0)
     {
-        gl_FragColor.r = cameraSpacePosition.z / float(uDebug.w);
+        gl_FragColor.r = cameraSpacePosition.z;
     }
     //  END DEBUG
-    // END DEBUG
 }

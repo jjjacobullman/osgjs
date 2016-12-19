@@ -8,7 +8,7 @@ uniform float uFar;
 varying vec4 vViewVertex;
 
 // DEBUG
-float initFarMinusNear = 4.804226065180611;
+uniform ivec4 uDebug;
 // END DEBUG
 
 vec4 encodeFloatRGBA( float v ) {
@@ -27,4 +27,7 @@ float zLinear() {
 void main( void ) {
    //gl_FragColor.r = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
    gl_FragColor.r = zLinear();
+
+   if (uDebug.z == 1)
+      gl_FragColor.r = gl_FragCoord.z / gl_FragCoord.w;
 }

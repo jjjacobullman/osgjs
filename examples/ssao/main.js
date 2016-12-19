@@ -48,6 +48,7 @@
 
         this._config = {
             ssao: true,
+            fallOfMethod: '0',
             blur: true,
             radius: 1.0,
             bias: 0.01,
@@ -61,6 +62,10 @@
             debugZDistance: 0.0,
             scene: 'box'
         };
+
+        // Contains 4 fall-of method, from 0 to 3
+        // resulting in a smoother or more constrated AO
+        this._fallOfMethods = [ '0', '1', '2', '3' ];
 
         this._modelsMap = {};
         this._modelList = [];
@@ -82,6 +87,7 @@
             uFar: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
             uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
             uProjScale: osg.Uniform.createFloat1( 1.0, 'uProjScale' ),
+            uFallOfMethod: osg.Uniform.createInt1( 0, 'uFallOfMethod' ),
             uDepthTexture: null,
             uDebugPosition: this._standardUniforms.uDebugPosition
         };
@@ -266,6 +272,7 @@
             stateSetCam.setAttributeAndModes( this._shaders.depth );
             stateSetCam.addUniform( this._aoUniforms.uNear );
             stateSetCam.addUniform( this._aoUniforms.uFar );
+            stateSetCam.addUniform( this._standardUniforms.uDebug );
 
             this._rttCamera = cam;
             return cam;
@@ -325,6 +332,12 @@
                 stateSet.addUniform( this._standardUniforms[ keys[ i ] ] );
 
             }
+
+        },
+
+        updateIntData: function ( uniform, value ) {
+
+            uniform.setInt( value );
 
         },
 
@@ -397,11 +410,21 @@
             this._gui = new window.dat.GUI();
             var gui = this._gui;
 
-            gui.add( this._config, 'ssao' )
+            var sceneFolder = gui.addFolder( 'Scene' );
+            var ssaoFolder = gui.addFolder( 'SSAO' );
+            var blurFolder = gui.addFolder( 'Blur' );
+
+            sceneFolder.addColor( this._config, 'sceneColor' )
+                .onChange( this.updateSceneColor.bind( this ) );
+            sceneFolder.add( this._config, 'scene', this._modelList )
+                .onChange( this.updateScene.bind( this ) );
+
+            // Fills the SSAO GUI section
+            ssaoFolder.add( this._config, 'ssao' )
                 .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
-            gui.add( this._config, 'blur' )
-                .onChange( this.updateBlur.bind( this ) );
-            gui.add( this._config, 'radius', 0.01, 10.0 )
+            ssaoFolder.add( this._config, 'fallOfMethod', this._fallOfMethods )
+                .onChange( this.updateIntData.bind( this, this._aoUniforms.uFallOfMethod ) );
+            ssaoFolder.add( this._config, 'radius', 0.1, 50.0 )
                 .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius, function ( value ) {
                     // Blur needs to take the radius into account
                     var invRadiusUniform = self._blurUniforms.uInvRadius;
@@ -409,24 +432,24 @@
                     // Intensity is dependent from the radius
                     self.updateIntensity();
                 } ) );
-            gui.add( this._config, 'bias', 0.01, 0.8 )
+            ssaoFolder.add( this._config, 'bias', 0.01, 0.8 )
                 .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
-            gui.add( this._config, 'intensity', 0.01, 5.0 )
+            ssaoFolder.add( this._config, 'intensity', 0.01, 5.0 )
                 .onChange( this.updateIntensity.bind( this ) );
-            gui.add( this._config, 'crispness', 0.0, 3.0 )
-                .onChange( this.updateFloatData.bind( this, this._blurUniforms.uCrispness, null ) );
-            gui.addColor( this._config, 'sceneColor' )
-                .onChange( this.updateSceneColor.bind( this ) );
-            gui.add( this._config, 'debugDepth' )
+            ssaoFolder.add( this._config, 'debugDepth' )
                 .onChange( this.updateDebugDepth.bind( this ) );
-            gui.add( this._config, 'debugPosition' )
+            ssaoFolder.add( this._config, 'debugPosition' )
                 .onChange( this.updateDebugPosition.bind( this ) );
-            gui.add( this._config, 'debugNormal' )
+            ssaoFolder.add( this._config, 'debugNormal' )
                 .onChange( this.updateDebugNormal.bind( this ) );
-            gui.add( this._config, 'debugZDistance' )
+            ssaoFolder.add( this._config, 'debugZDistance' )
                 .onChange( this.updateDebugZDistance.bind( this ), 0.0, 10.0 );
-            gui.add( this._config, 'scene', this._modelList )
-                .onChange( this.updateScene.bind( this ) );
+
+            // Fills the blur GUI section
+            blurFolder.add( this._config, 'blur' )
+                .onChange( this.updateBlur.bind( this ) );
+            blurFolder.add( this._config, 'crispness', 0.0, 3.0 )
+                .onChange( this.updateFloatData.bind( this, this._blurUniforms.uCrispness, null ) );
 
             this.updateIntensity();
             this.updateSceneColor();
@@ -470,7 +493,10 @@
                     this.update = function () {
 
                         var rootCam = self._viewer.getCamera();
+                        var viewport = rootCam.getViewport();
                         var projection = rootCam.getProjectionMatrix();
+
+                        cam.setViewport( viewport );
 
                         osg.mat4.copy( cam.getViewMatrix(), rootCam.getViewMatrix() );
                         osg.mat4.copy( cam.getProjectionMatrix(), projection );
@@ -478,8 +504,8 @@
                         var frustum = {};
                         osg.mat4.getFrustum( frustum, cam.getProjectionMatrix() );
 
-                        var width = cam.getViewport().width();
-                        var height = cam.getViewport().height();
+                        var width = viewport.width();
+                        var height = viewport.height();
 
                         var zFar = frustum.zFar;
                         var zNear = frustum.zNear;
@@ -489,11 +515,6 @@
                         //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
                         self._aoUniforms.uNear.setFloat( zNear );
                         self._aoUniforms.uFar.setFloat( zFar );
-
-                        // DEBUG
-                        //console.log( 'Near = ' + zNear + ' | Far = ' + zFar);
-                        //console.log( zFar );
-                        // END DEBUG
 
                         // Projection scale
                         var vFov = projection[ 15 ] === 1 ? 1.0 : 2.0 / projection[ 5 ];
@@ -510,6 +531,11 @@
 
                         stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
 
+                        // DEBUG
+                        //console.log( 'Near = ' + zNear + ' | Far = ' + zFar + ' ratio ' + (zFar / zNear));
+                        //console.log( 'pojScale = '  + projScale );
+                        // END DEBUG
+
                         return true;
                     };
                 };
@@ -523,6 +549,8 @@
 
             var sceneId = this._config.scene;
             var node = this._modelsMap[ sceneId ];
+
+            console.log( node.getBoundingSphere() );
 
             // Cleans root & camera
             this._rootScene.removeChildren();
@@ -539,10 +567,15 @@
             this._modelsMap[ name ] = scene;
             this._config.scene = name;
 
-            var controllers = this._gui.__controllers;
+            /*var controllers = this._gui.__controllers;
             controllers[ controllers.length - 1 ].remove();
             this._gui.add( this._config, 'scene', this._modelList )
-                .onChange( this.updateScene.bind( this ) );
+                .onChange( this.updateScene.bind( this ) );*/
+
+            var folder = this._gui.__folders.Scene;
+            var controllers = folder.__controllers;
+            controllers[ controllers.length - 1 ].remove();
+            folder.add( this._config, 'scene', this._modelList ).onChange( this.updateScene.bind( this ) );
 
             this.updateScene();
 
