@@ -403,9 +403,39 @@
             uniform.setInt4( [ 0, 0, 0, value ] );
         },
 
-        initDatGUI: function () {
-
+        createSSAOGUI: function ( ssaoFolder, radiusMin, radiusMax ) {
             var self = this;
+
+            ssaoFolder.add( this._config, 'ssao' )
+                .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
+            ssaoFolder.add( this._config, 'fallOfMethod', this._fallOfMethods )
+                .onChange( this.updateIntData.bind( this, this._aoUniforms.uFallOfMethod ) );
+            ssaoFolder.add( this._config, 'radius', radiusMin, radiusMax )
+                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius, function ( value ) {
+                    // Blur needs to take the radius into account
+                    var invRadiusUniform = self._blurUniforms.uInvRadius;
+                    invRadiusUniform.setFloat( 1.0 / value );
+                    // Intensity is dependent from the radius
+                    self.updateIntensity();
+                } ) );
+
+            ssaoFolder.add( this._config, 'bias', 0.01, 0.8 )
+                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
+            ssaoFolder.add( this._config, 'intensity', 0.01, 5.0 )
+                .onChange( this.updateIntensity.bind( this ) );
+            ssaoFolder.add( this._config, 'debugDepth' )
+                .onChange( this.updateDebugDepth.bind( this ) );
+            ssaoFolder.add( this._config, 'debugPosition' )
+                .onChange( this.updateDebugPosition.bind( this ) );
+            ssaoFolder.add( this._config, 'debugNormal' )
+                .onChange( this.updateDebugNormal.bind( this ) );
+            ssaoFolder.add( this._config, 'debugZDistance' )
+                .onChange( this.updateDebugZDistance.bind( this ), 0.0, 10.0 );
+
+            this.updateIntensity();
+        },
+
+        initDatGUI: function () {
 
             this._gui = new window.dat.GUI();
             var gui = this._gui;
@@ -420,30 +450,7 @@
                 .onChange( this.updateScene.bind( this ) );
 
             // Fills the SSAO GUI section
-            ssaoFolder.add( this._config, 'ssao' )
-                .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
-            ssaoFolder.add( this._config, 'fallOfMethod', this._fallOfMethods )
-                .onChange( this.updateIntData.bind( this, this._aoUniforms.uFallOfMethod ) );
-            ssaoFolder.add( this._config, 'radius', 0.1, 50.0 )
-                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius, function ( value ) {
-                    // Blur needs to take the radius into account
-                    var invRadiusUniform = self._blurUniforms.uInvRadius;
-                    invRadiusUniform.setFloat( 1.0 / value );
-                    // Intensity is dependent from the radius
-                    self.updateIntensity();
-                } ) );
-            ssaoFolder.add( this._config, 'bias', 0.01, 0.8 )
-                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
-            ssaoFolder.add( this._config, 'intensity', 0.01, 5.0 )
-                .onChange( this.updateIntensity.bind( this ) );
-            ssaoFolder.add( this._config, 'debugDepth' )
-                .onChange( this.updateDebugDepth.bind( this ) );
-            ssaoFolder.add( this._config, 'debugPosition' )
-                .onChange( this.updateDebugPosition.bind( this ) );
-            ssaoFolder.add( this._config, 'debugNormal' )
-                .onChange( this.updateDebugNormal.bind( this ) );
-            ssaoFolder.add( this._config, 'debugZDistance' )
-                .onChange( this.updateDebugZDistance.bind( this ), 0.0, 10.0 );
+            this.createSSAOGUI( ssaoFolder, 0.0, 10.0 );
 
             // Fills the blur GUI section
             blurFolder.add( this._config, 'blur' )
@@ -451,7 +458,6 @@
             blurFolder.add( this._config, 'crispness', 0.0, 3.0 )
                 .onChange( this.updateFloatData.bind( this, this._blurUniforms.uCrispness, null ) );
 
-            this.updateIntensity();
             this.updateSceneColor();
 
         },
@@ -550,8 +556,6 @@
             var sceneId = this._config.scene;
             var node = this._modelsMap[ sceneId ];
 
-            console.log( node.getBoundingSphere() );
-
             // Cleans root & camera
             this._rootScene.removeChildren();
             this._rttCamera.removeChildren();
@@ -559,6 +563,23 @@
             this._rootScene.addChild( node );
             this._rttCamera.addChild( node );
 
+            // Updates the maximum radius according
+            // to the scene bounding box
+            var sceneRadius = node.getBoundingSphere().radius();
+
+            var ssaoFolder = this._gui.__folders.SSAO;
+            var ssaoControllers = ssaoFolder.__controllers;
+
+            for ( var i = 0; i < ssaoControllers.length; ++i ) {
+
+                ssaoControllers[ i ].remove();
+
+            }
+            ssaoControllers.length = 0;
+            this.createSSAOGUI( ssaoFolder, 0.0, 0.8 * sceneRadius );
+            this._config.radius = sceneRadius * 0.4;
+
+            console.log( sceneRadius );
         },
 
         addScene: function ( name, scene ) {
@@ -566,11 +587,6 @@
             this._modelList.push( name );
             this._modelsMap[ name ] = scene;
             this._config.scene = name;
-
-            /*var controllers = this._gui.__controllers;
-            controllers[ controllers.length - 1 ].remove();
-            this._gui.add( this._config, 'scene', this._modelList )
-                .onChange( this.updateScene.bind( this ) );*/
 
             var folder = this._gui.__folders.Scene;
             var controllers = folder.__controllers;
@@ -619,12 +635,16 @@
 
             if ( !scene ) return;
 
-            var mt = new osg.MatrixTransform();
-            osg.mat4.fromRotation( mt.getMatrix(), Math.PI / 2, [ 1, 0, 0 ] );
+            //var mt = new osg.MatrixTransform();
+            //osg.mat4.fromScaling( mt.getMatrix(), [ 100, 100, 100 ] );
 
-            mt.addChild( scene );
+            var mtr = new osg.MatrixTransform();
+            osg.mat4.fromRotation( mtr.getMatrix(), Math.PI / 2, [ 1, 0, 0 ] );
 
-            self.addScene( sceneName, mt );
+            mtr.addChild( scene );
+            //mt.addChild(mtr);
+
+            self.addScene( sceneName, mtr );
         } );
 
     };

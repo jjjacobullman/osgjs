@@ -180,6 +180,7 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
         return fallOffMethod1(vv, vn, normal);
     else if (uFallOfMethod == 2)
         return fallOffMethod2(vv, vn, normal);
+
     return fallOffMethod3(vv, vn, normal);
 }
 
