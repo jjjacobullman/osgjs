@@ -50,10 +50,11 @@
             ssao: true,
             fallOfMethod: '0',
             blur: true,
+            scale: 1.0,
             radius: 1.0,
             bias: 0.01,
             intensity: 0.8,
-            crispness: 1.0,
+            crispness: 0.12,
             sceneColor: '#d71515', //'#ECF0F1',
             debugDepth: false,
             debugPosition: false,
@@ -98,7 +99,7 @@
             uAoTexture: null,
             uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
             uInvRadius: osg.Uniform.createFloat( 1.0, 'uInvRadius' ),
-            uCrispness: osg.Uniform.createFloat( 1.0, 'uCrispness' )
+            uCrispness: osg.Uniform.createFloat( this._config.crispness, 'uCrispness' )
         };
 
         this._blurVerticalUniforms = {
@@ -136,7 +137,7 @@
 
         createScene: function () {
 
-            var group = new osg.Node();
+            var group = new osg.MatrixTransform();
             group.setName( 'group' );
 
             var ground = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 4.0, 4.0, 0.0 );
@@ -356,23 +357,48 @@
 
         },
 
-        updateBlur: function () {
-            if ( this._config.blur ) this._currentAoTexture = this._aoBluredTexture;
-            else this._currentAoTexture = this._aoTexture;
-        },
-
-        updateIntensity: function () {
-            var uniform = this._aoUniforms.uIntensityDivRadius6;
-            var intensity = this._config.intensity;
-            var value = intensity / Math.pow( this._config.radius, 6 );
-            uniform.setFloat( value );
-        },
-
         updateSceneColor: function () {
             var color = convertColor( this._config.sceneColor );
             var uniform = this._standardUniforms.uSceneColor;
 
             uniform.setFloat4( color );
+        },
+
+        updateScale: function () {
+
+            var scale = this._config.scale;
+
+            var matrixTransform = this._modelsMap[ this._config.scene ];
+            osg.mat4.fromScaling( matrixTransform.getMatrix(), [ scale, scale, scale ] );
+
+            this.updateRadiusSlider();
+        },
+
+        updateBlur: function () {
+            if ( this._config.blur ) this._currentAoTexture = this._aoBluredTexture;
+            else this._currentAoTexture = this._aoTexture;
+        },
+
+        updateRadius: function () {
+            var value = this._config.radius;
+
+            var uniform = this._aoUniforms.uRadius;
+            var invRadiusUniform = this._blurUniforms.uInvRadius;
+
+            this.updateFloatData( uniform, null, value );
+            // Blur needs to take the radius into account
+            this.updateFloatData( invRadiusUniform, null, 1.0 / value );
+            // Intensity is dependent from the radius
+            this.updateIntensity();
+        },
+
+        updateIntensity: function () {
+            var uniform = this._aoUniforms.uIntensityDivRadius6;
+            var intensity = this._config.intensity;
+
+            var value = ( intensity * this._config.scale ) / Math.pow( this._config.radius, 6 );
+            uniform.setFloat( value );
+            console.log( 'intensity = ' + value );
         },
 
         updateDebugDepth: function () {
@@ -403,22 +429,40 @@
             uniform.setInt4( [ 0, 0, 0, value ] );
         },
 
+        updateRadiusSlider: function () {
+
+            var node = this._modelsMap[ this._config.scene ];
+            node.dirtyBound();
+            // Updates the maximum radius according
+            // to the scene bounding box
+            var sceneRadius = node.getBoundingSphere().radius();
+
+            var ssaoFolder = this._gui.__folders.SSAO;
+            var ssaoControllers = ssaoFolder.__controllers;
+
+            for ( var i = 0; i < ssaoControllers.length; ++i ) {
+
+                ssaoControllers[ i ].remove();
+
+            }
+            ssaoControllers.length = 0;
+
+            this._config.radius = sceneRadius * 0.4;
+            this.updateRadius();
+
+            this.createSSAOGUI( ssaoFolder, 0.0, 0.8 * sceneRadius );
+
+            console.log( sceneRadius );
+        },
+
         createSSAOGUI: function ( ssaoFolder, radiusMin, radiusMax ) {
-            var self = this;
 
             ssaoFolder.add( this._config, 'ssao' )
                 .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
             ssaoFolder.add( this._config, 'fallOfMethod', this._fallOfMethods )
                 .onChange( this.updateIntData.bind( this, this._aoUniforms.uFallOfMethod ) );
             ssaoFolder.add( this._config, 'radius', radiusMin, radiusMax )
-                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uRadius, function ( value ) {
-                    // Blur needs to take the radius into account
-                    var invRadiusUniform = self._blurUniforms.uInvRadius;
-                    invRadiusUniform.setFloat( 1.0 / value );
-                    // Intensity is dependent from the radius
-                    self.updateIntensity();
-                } ) );
-
+                .onChange( this.updateRadius.bind( this ) );
             ssaoFolder.add( this._config, 'bias', 0.01, 0.8 )
                 .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
             ssaoFolder.add( this._config, 'intensity', 0.01, 5.0 )
@@ -446,6 +490,8 @@
 
             sceneFolder.addColor( this._config, 'sceneColor' )
                 .onChange( this.updateSceneColor.bind( this ) );
+            sceneFolder.add( this._config, 'scale', 1.0, 50.0 )
+                .onChange( this.updateScale.bind( this ) );
             sceneFolder.add( this._config, 'scene', this._modelList )
                 .onChange( this.updateScene.bind( this ) );
 
@@ -455,7 +501,7 @@
             // Fills the blur GUI section
             blurFolder.add( this._config, 'blur' )
                 .onChange( this.updateBlur.bind( this ) );
-            blurFolder.add( this._config, 'crispness', 0.0, 3.0 )
+            blurFolder.add( this._config, 'crispness', 0.1, 0.8 )
                 .onChange( this.updateFloatData.bind( this, this._blurUniforms.uCrispness, null ) );
 
             this.updateSceneColor();
@@ -475,10 +521,9 @@
                 self._modelsMap.box = scene;
 
                 var cam = self.createDepthCameraRTT();
-                cam.addChild( scene );
-
                 self._rootScene = new osg.Node();
-                self._rootScene.addChild( scene );
+
+                self.updateScene();
 
                 var composerNode = new osg.Node();
                 composerNode.addChild( self.createComposer() );
@@ -563,23 +608,7 @@
             this._rootScene.addChild( node );
             this._rttCamera.addChild( node );
 
-            // Updates the maximum radius according
-            // to the scene bounding box
-            var sceneRadius = node.getBoundingSphere().radius();
-
-            var ssaoFolder = this._gui.__folders.SSAO;
-            var ssaoControllers = ssaoFolder.__controllers;
-
-            for ( var i = 0; i < ssaoControllers.length; ++i ) {
-
-                ssaoControllers[ i ].remove();
-
-            }
-            ssaoControllers.length = 0;
-            this.createSSAOGUI( ssaoFolder, 0.0, 0.8 * sceneRadius );
-            this._config.radius = sceneRadius * 0.4;
-
-            console.log( sceneRadius );
+            this.updateRadiusSlider();
         },
 
         addScene: function ( name, scene ) {
@@ -635,16 +664,16 @@
 
             if ( !scene ) return;
 
-            //var mt = new osg.MatrixTransform();
+            var mt = new osg.MatrixTransform();
             //osg.mat4.fromScaling( mt.getMatrix(), [ 100, 100, 100 ] );
 
             var mtr = new osg.MatrixTransform();
             osg.mat4.fromRotation( mtr.getMatrix(), Math.PI / 2, [ 1, 0, 0 ] );
 
             mtr.addChild( scene );
-            //mt.addChild(mtr);
+            mt.addChild( mtr );
 
-            self.addScene( sceneName, mtr );
+            self.addScene( sceneName, mt );
         } );
 
     };

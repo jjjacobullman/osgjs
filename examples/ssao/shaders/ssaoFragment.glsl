@@ -174,6 +174,10 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
     float vv = dot(v, v);
     float vn = dot(v, normal);
 
+    /*if (vn >= 1.0)
+        return 1.0;
+    return 0.0;*/
+
     if (uFallOfMethod == 0)
         return fallOffMethod0(vv, vn, normal);
     else if (uFallOfMethod == 1)
@@ -238,6 +242,7 @@ void main( void ) {
     //gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
     gl_FragColor.r = aoValue;
     gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / FAR_PLANE), 0.0, 1.0);
+    //gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / uFar), 0.0, 1.0);
 
     // DEBUG
     if (uDebug.x == 1)
