@@ -164,7 +164,6 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
 
     float screenSpaceRadius;
     vec2 offsetUnitVec = computeOffsetUnitVec(i, randomAngle, screenSpaceRadius);
-    //screenSpaceRadius *= diskRadius;
     screenSpaceRadius = max(0.75, screenSpaceRadius * diskRadius);
 
     vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);

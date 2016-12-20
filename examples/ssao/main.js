@@ -54,7 +54,7 @@
             radius: 1.0,
             bias: 0.01,
             intensity: 0.8,
-            crispness: 0.12,
+            crispness: 1.0,
             sceneColor: '#d71515', //'#ECF0F1',
             debugDepth: false,
             debugPosition: false,
@@ -63,6 +63,15 @@
             debugZDistance: 0.0,
             scene: 'box'
         };
+
+        // The two following attributes are use for sliders
+        // normalization according to the scene bounding sphere
+        this._baseSlidersBounds = {
+            radius: [ 0.05, 2.0 ],
+            bias: [ 0.01, 0.8 ],
+            intensity: [ 0.01, 5.0 ],
+        };
+        this._baseSceneRadius = 2.8284271247461903;
 
         // Contains 4 fall-of method, from 0 to 3
         // resulting in a smoother or more constrated AO
@@ -81,9 +90,9 @@
 
         this._aoUniforms = {
             uViewport: this._standardUniforms.uViewport,
-            uRadius: osg.Uniform.createFloat1( 1.0, 'uRadius' ),
-            uBias: osg.Uniform.createFloat1( 0.01, 'uBias' ),
-            uIntensityDivRadius6: osg.Uniform.createFloat1( 0.8, 'uIntensityDivRadius6' ),
+            uRadius: osg.Uniform.createFloat1( this._config.radius, 'uRadius' ),
+            uBias: osg.Uniform.createFloat1( this._config.bias, 'uBias' ),
+            uIntensityDivRadius6: osg.Uniform.createFloat1( this._config.intensity, 'uIntensityDivRadius6' ),
             uNear: osg.Uniform.createFloat1( 1.0, 'uNear' ),
             uFar: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
             uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
@@ -369,9 +378,11 @@
             var scale = this._config.scale;
 
             var matrixTransform = this._modelsMap[ this._config.scene ];
+            var prevBsRadius = matrixTransform.getBoundingSphere().radius();
+
             osg.mat4.fromScaling( matrixTransform.getMatrix(), [ scale, scale, scale ] );
 
-            this.updateRadiusSlider();
+            this.normalizeSliders( prevBsRadius );
         },
 
         updateBlur: function () {
@@ -392,11 +403,20 @@
             this.updateIntensity();
         },
 
+        updateBias: function () {
+
+            var uniform = this._aoUniforms.uBias;
+            var value = this._config.bias;
+
+            this.updateFloatData( uniform, null, value );
+
+        },
+
         updateIntensity: function () {
             var uniform = this._aoUniforms.uIntensityDivRadius6;
             var intensity = this._config.intensity;
 
-            var value = ( intensity * this._config.scale ) / Math.pow( this._config.radius, 6 );
+            var value = intensity / Math.pow( this._config.radius, 6 );
             uniform.setFloat( value );
             console.log( 'intensity = ' + value );
         },
@@ -429,13 +449,10 @@
             uniform.setInt4( [ 0, 0, 0, value ] );
         },
 
-        updateRadiusSlider: function () {
+        normalizeSliders: function ( prevBsRadius ) {
 
             var node = this._modelsMap[ this._config.scene ];
             node.dirtyBound();
-            // Updates the maximum radius according
-            // to the scene bounding box
-            var sceneRadius = node.getBoundingSphere().radius();
 
             var ssaoFolder = this._gui.__folders.SSAO;
             var ssaoControllers = ssaoFolder.__controllers;
@@ -447,25 +464,57 @@
             }
             ssaoControllers.length = 0;
 
-            this._config.radius = sceneRadius * 0.4;
+            var sceneRadius = node.getBoundingSphere().radius();
+            var scale = this._baseSceneRadius;
+
+            var radBounds = this._baseSlidersBounds.radius;
+            var biasBounds = this._baseSlidersBounds.bias;
+            var intenBounds = this._baseSlidersBounds.intensity;
+
+            var slidersBounds = {};
+            slidersBounds.radius = [ ( radBounds[ 0 ] * sceneRadius ) / scale, ( radBounds[ 1 ] * sceneRadius ) / scale ];
+            slidersBounds.bias = [ ( biasBounds[ 0 ] * sceneRadius ) / scale, ( biasBounds[ 1 ] * sceneRadius ) / scale ];
+            slidersBounds.intensity = [ ( intenBounds[ 0 ] * sceneRadius ) / scale, ( intenBounds[ 1 ] * sceneRadius ) / scale ];
+
+            if (prevBsRadius) {
+
+                this._config.radius = ( sceneRadius * this._config.radius ) / prevBsRadius;
+                this._config.bias = ( sceneRadius * this._config.bias ) / prevBsRadius;
+                this._config.bias = ( this._config.bias < slidersBounds.bias[ 0 ] ) ? slidersBounds.bias[ 0 ] : this._config.bias;
+                this._config.intensity = ( sceneRadius * this._config.intensity ) / prevBsRadius;
+
+            }
+            else {
+
+                this._config.radius = slidersBounds.radius[0];
+                this._config.bias = slidersBounds.bias[0];
+                this._config.intensity = slidersBounds.intensity[0];
+
+            }
+
             this.updateRadius();
 
-            this.createSSAOGUI( ssaoFolder, 0.0, 0.8 * sceneRadius );
+            this.createSSAOGUI( ssaoFolder, slidersBounds );
 
             console.log( sceneRadius );
+
         },
 
-        createSSAOGUI: function ( ssaoFolder, radiusMin, radiusMax ) {
+        createSSAOGUI: function ( ssaoFolder, slidersBounds ) {
+
+            var radiusBounds = slidersBounds.radius;
+            var biasBounds = slidersBounds.bias;
+            var intensityBounds = slidersBounds.intensity;
 
             ssaoFolder.add( this._config, 'ssao' )
                 .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
             ssaoFolder.add( this._config, 'fallOfMethod', this._fallOfMethods )
                 .onChange( this.updateIntData.bind( this, this._aoUniforms.uFallOfMethod ) );
-            ssaoFolder.add( this._config, 'radius', radiusMin, radiusMax )
+            ssaoFolder.add( this._config, 'radius', radiusBounds[ 0 ], radiusBounds[ 1 ] )
                 .onChange( this.updateRadius.bind( this ) );
-            ssaoFolder.add( this._config, 'bias', 0.01, 0.8 )
-                .onChange( this.updateFloatData.bind( this, this._aoUniforms.uBias, null ) );
-            ssaoFolder.add( this._config, 'intensity', 0.01, 5.0 )
+            ssaoFolder.add( this._config, 'bias', biasBounds[ 0 ], biasBounds[ 1 ] )
+                .onChange( this.updateBias.bind( this ) );
+            ssaoFolder.add( this._config, 'intensity', intensityBounds[ 0 ], intensityBounds[ 1 ] )
                 .onChange( this.updateIntensity.bind( this ) );
             ssaoFolder.add( this._config, 'debugDepth' )
                 .onChange( this.updateDebugDepth.bind( this ) );
@@ -475,8 +524,6 @@
                 .onChange( this.updateDebugNormal.bind( this ) );
             ssaoFolder.add( this._config, 'debugZDistance' )
                 .onChange( this.updateDebugZDistance.bind( this ), 0.0, 10.0 );
-
-            this.updateIntensity();
         },
 
         initDatGUI: function () {
@@ -493,15 +540,15 @@
             sceneFolder.add( this._config, 'scale', 1.0, 50.0 )
                 .onChange( this.updateScale.bind( this ) );
             sceneFolder.add( this._config, 'scene', this._modelList )
-                .onChange( this.updateScene.bind( this ) );
+                .onChange( this.updateScene.bind( this, this._config.scene ) );
 
             // Fills the SSAO GUI section
-            this.createSSAOGUI( ssaoFolder, 0.0, 10.0 );
+            this.createSSAOGUI( ssaoFolder, this._baseSlidersBounds );
 
             // Fills the blur GUI section
             blurFolder.add( this._config, 'blur' )
                 .onChange( this.updateBlur.bind( this ) );
-            blurFolder.add( this._config, 'crispness', 0.1, 0.8 )
+            blurFolder.add( this._config, 'crispness', 0.1, 2.5 )
                 .onChange( this.updateFloatData.bind( this, this._blurUniforms.uCrispness, null ) );
 
             this.updateSceneColor();
@@ -562,8 +609,7 @@
                         var zNear = frustum.zNear;
 
                         self._standardUniforms.uViewport.setInt2( [ width, height ] );
-                        // Updates SSAO uniforms
-                        //self._uniforms.c.setFloat3( [ zNear * zFar, zNear - zFar, zFar ] );
+
                         self._aoUniforms.uNear.setFloat( zNear );
                         self._aoUniforms.uFar.setFloat( zFar );
 
@@ -596,7 +642,7 @@
 
         },
 
-        updateScene: function () {
+        updateScene: function ( ) {
 
             var sceneId = this._config.scene;
             var node = this._modelsMap[ sceneId ];
@@ -608,7 +654,7 @@
             this._rootScene.addChild( node );
             this._rttCamera.addChild( node );
 
-            this.updateRadiusSlider();
+            this.normalizeSliders( null );
         },
 
         addScene: function ( name, scene ) {
