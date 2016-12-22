@@ -10,6 +10,7 @@ precision highp float;
 #define EPSILON 0.001
 #define NB_SAMPLES 11
 
+# define M_PI 3.14159265358979323846  /* pi */
 
 /*
     1,  1,  1,  2,  3,  2,  5,  2,  3,  2,  // 0
@@ -92,7 +93,7 @@ vec3 getPosition(ivec2 ssP) {
     vec2 ssP_float = vec2(ssP);
 
     vec3 P;
-    P.z = zValueFromScreenSpacePosition(ssP_float);
+    P.z = texture2D(uDepthTexture, vTexCoord).r;
 
     // Offset to pixel center
     P = reconstructCSPosition(ssP_float + vec2(0.5), P.z);
@@ -142,6 +143,10 @@ float fallOffMethod0(float vv, float vn, vec3 normal) {
     //float ao = f * max((vn - uBias) * inversesqrt(EPSILON + vv), 0.0);
     // END HIGH QUALITY
 
+    // DEBUG
+    //float scaledScreenDistance = sqrt(vv) / uFar;
+    // END DEBUG
+
     float f = max(radius2 - vv, 0.0);
     float ao = f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
     return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
@@ -167,15 +172,18 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
     screenSpaceRadius = max(0.75, screenSpaceRadius * diskRadius);
 
     vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
+    // This fixes the self occlusion created when  there is no depth written
+    if (occludingPoint.z <= uNear)
+        return 0.0;
 
     vec3 v = occludingPoint - camSpacePos;
-
     float vv = dot(v, v);
     float vn = dot(v, normal);
 
-    /*if (vn >= 1.0)
-        return 1.0;
-    return 0.0;*/
+    // DEBUG
+    //float scaledScreenDistance = length(v) / uFar;
+    //return 1.0 * max(0.0, (dot(normal, v) * uFar) / scaledScreenDistance - uBias) / (1.0 + scaledScreenDistance * scaledScreenDistance);
+    //END DEBUG
 
     if (uFallOfMethod == 0)
         return fallOffMethod0(vv, vn, normal);
@@ -197,7 +205,9 @@ float rand(vec2 co)
     return fract(sin(sn) * c);
 }
 
+
 void main( void ) {
+
     ivec2 ssC = ivec2(gl_FragCoord.xy);
 
     vec3 cameraSpacePosition = getPosition(ssC);
@@ -215,7 +225,7 @@ void main( void ) {
     float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 3.14;
     //float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
 
-    float ssRadius = - uProjScale * uRadius / max(cameraSpacePosition.z, 0.1);
+    float ssRadius = - uProjScale * uRadius / max(cameraSpacePosition.z, 0.2);
     //ssRadius = clamp(ssRadius, 0.0, 150.0);
     // EARLY RETURN
     // Impossible to compute AO, too few pixels concerned by the radius
@@ -232,6 +242,22 @@ void main( void ) {
 
     float maxSample_float = float(NB_SAMPLES);
 
+    // DEBUG
+    if (uDebug.w != 0) {
+        float screenSpaceRadius;
+        vec2 offsetUnitVec = computeOffsetUnitVec(0, randomAngle, screenSpaceRadius);
+        screenSpaceRadius = max(0.75, screenSpaceRadius * ssRadius);
+
+        vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
+        vec3 v = occludingPoint - cameraSpacePosition;
+        gl_FragColor = vec4(occludingPoint, 1.0);
+
+        gl_FragColor = vec4(vec3(contrib), 1.0);
+
+        return;
+    }
+    // END DEBUG
+    //float aoValue = pow(max(0.0, 1.0 - sqrt(contrib * (3.0 / maxSample_float))), 2.0);
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
 
     // Anti-tone map to reduce contrast and drag dark region farther
@@ -250,9 +276,5 @@ void main( void ) {
         gl_FragColor.rgb = -normal;
     if (uDebug.z == 1)
         gl_FragColor.r = texture2D(uDepthTexture, ((gl_FragCoord.xy + 0.25) / vec2(uViewport))).r;
-    if (uDebug.w != 0)
-    {
-        gl_FragColor.r = cameraSpacePosition.z;
-    }
     //  END DEBUG
 }

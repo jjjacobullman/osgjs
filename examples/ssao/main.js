@@ -60,7 +60,7 @@
             debugPosition: false,
             debugNormal: false,
             debugRadius: false,
-            debugZDistance: 0.0,
+            debugVector: false,
             scene: 'box'
         };
 
@@ -155,8 +155,13 @@
             var box = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 1.0, 1.0, 1.0 );
             box.setName( 'Box' );
 
+            var box2 = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 10.0, 10.0, 10.0 );
+            box2.setName( 'Skybox' );
+            box2.getOrCreateStateSet().setAttributeAndModes( new osg.CullFace( 'DISABLE' ) );
+
             group.addChild( ground );
             group.addChild( box );
+            //group.addChild( box2 );
 
             return group;
         },
@@ -293,6 +298,7 @@
             var composer = new osgUtil.Composer();
 
             var vertex = shaderProcessor.getShader( 'standardVertex.glsl' );
+            var aoVertex = shaderProcessor.getShader( 'ssaoVertex.glsl' );
             var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
             var blurFragment = shaderProcessor.getShader( 'blurFragment.glsl' );
 
@@ -308,7 +314,8 @@
 
             this._aoUniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
-            aoPass.setVertexShader( vertex );
+            //aoPass.setVertexShader( vertex );
+            aoPass.setVertexShader( aoVertex );
 
             this._blurUniforms.uAoTexture = rttAo;
             this._blurUniforms.uAxis.setInt2( [ 1, 0 ] );
@@ -418,7 +425,6 @@
 
             var value = intensity / Math.pow( this._config.radius, 6 );
             uniform.setFloat( value );
-            console.log( 'intensity = ' + value );
         },
 
         updateDebugDepth: function () {
@@ -442,8 +448,8 @@
             uniform.setInt4( [ 0, toggle, 0, 0 ] );
         },
 
-        updateDebugZDistance: function () {
-            var value = this._config.debugZDistance;
+        updateDebugVector: function () {
+            var value = this._config.debugVector;
             var uniform = this._standardUniforms.uDebug;
 
             uniform.setInt4( [ 0, 0, 0, value ] );
@@ -476,19 +482,18 @@
             slidersBounds.bias = [ ( biasBounds[ 0 ] * sceneRadius ) / scale, ( biasBounds[ 1 ] * sceneRadius ) / scale ];
             slidersBounds.intensity = [ ( intenBounds[ 0 ] * sceneRadius ) / scale, ( intenBounds[ 1 ] * sceneRadius ) / scale ];
 
-            if (prevBsRadius) {
+            if ( prevBsRadius ) {
 
                 this._config.radius = ( sceneRadius * this._config.radius ) / prevBsRadius;
                 this._config.bias = ( sceneRadius * this._config.bias ) / prevBsRadius;
                 this._config.bias = ( this._config.bias < slidersBounds.bias[ 0 ] ) ? slidersBounds.bias[ 0 ] : this._config.bias;
                 this._config.intensity = ( sceneRadius * this._config.intensity ) / prevBsRadius;
 
-            }
-            else {
+            } else {
 
-                this._config.radius = slidersBounds.radius[0];
-                this._config.bias = slidersBounds.bias[0];
-                this._config.intensity = slidersBounds.intensity[0];
+                this._config.radius = slidersBounds.radius[ 0 ];
+                this._config.bias = slidersBounds.bias[ 0 ];
+                this._config.intensity = slidersBounds.intensity[ 0 ];
 
             }
 
@@ -522,8 +527,8 @@
                 .onChange( this.updateDebugPosition.bind( this ) );
             ssaoFolder.add( this._config, 'debugNormal' )
                 .onChange( this.updateDebugNormal.bind( this ) );
-            ssaoFolder.add( this._config, 'debugZDistance' )
-                .onChange( this.updateDebugZDistance.bind( this ), 0.0, 10.0 );
+            ssaoFolder.add( this._config, 'debugVector' )
+                .onChange( this.updateDebugVector.bind( this ) );
         },
 
         initDatGUI: function () {
@@ -642,7 +647,7 @@
 
         },
 
-        updateScene: function ( ) {
+        updateScene: function () {
 
             var sceneId = this._config.scene;
             var node = this._modelsMap[ sceneId ];
@@ -669,7 +674,6 @@
             folder.add( this._config, 'scene', this._modelList ).onChange( this.updateScene.bind( this ) );
 
             this.updateScene();
-
         },
 
     } );
@@ -711,7 +715,6 @@
             if ( !scene ) return;
 
             var mt = new osg.MatrixTransform();
-            //osg.mat4.fromScaling( mt.getMatrix(), [ 100, 100, 100 ] );
 
             var mtr = new osg.MatrixTransform();
             osg.mat4.fromRotation( mtr.getMatrix(), Math.PI / 2, [ 1, 0, 0 ] );

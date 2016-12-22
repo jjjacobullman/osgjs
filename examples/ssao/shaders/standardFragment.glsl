@@ -30,5 +30,5 @@ void main( void ) {
 	if (uDebug.x == 1 || uDebug.y == 1)
 		gl_FragColor = vec4(texture2D(uAoTexture, gl_FragCoord.xy / vec2(uViewport)).xyz, 1.0);
 	if (uDebug.z == 1 || uDebug.w == 1)
-		gl_FragColor = vec4(vec3(fetchTextureValue(gl_FragCoord.xy)), 1.0);
+		gl_FragColor = vec4(vec3(texture2D(uAoTexture, gl_FragCoord.xy / vec2(uViewport))), 1.0);
 }

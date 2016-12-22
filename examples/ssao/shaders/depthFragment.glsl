@@ -20,8 +20,13 @@ vec4 encodeFloatRGBA( float v ) {
 
 float zLinear() {
    float d = gl_FragCoord.z;
+
+   if (d == 0.0)
+      return uNear;
+
    //zNear * zFar, zNear - zFar, zFar
    return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+   //return (-uNear * -uFar) / (d * (-uNear + uFar) - uFar);
 }
 
 void main( void ) {
