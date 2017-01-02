@@ -97,6 +97,7 @@
             uFar: osg.Uniform.createFloat1( 1000.0, 'uFar' ),
             uProjectionInfo: osg.Uniform.createFloat4( new Array( 4 ), 'uProjectionInfo' ),
             uProjScale: osg.Uniform.createFloat1( 1.0, 'uProjScale' ),
+            uBoudingSphereRadius: osg.Uniform.createFloat1( 1.0, 'uBoudingSphereRadius' ),
             uFallOfMethod: osg.Uniform.createInt1( 0, 'uFallOfMethod' ),
             uDepthTexture: null,
             uDebugPosition: this._standardUniforms.uDebugPosition
@@ -108,7 +109,8 @@
             uAoTexture: null,
             uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
             uInvRadius: osg.Uniform.createFloat( 1.0, 'uInvRadius' ),
-            uCrispness: osg.Uniform.createFloat( this._config.crispness, 'uCrispness' )
+            uCrispness: osg.Uniform.createFloat( this._config.crispness, 'uCrispness' ),
+            uBoudingSphereRadius: this._aoUniforms.uBoudingSphereRadius
         };
 
         this._blurVerticalUniforms = {
@@ -117,7 +119,8 @@
             uAoTexture: null,
             uAxis: osg.Uniform.createInt2( new Array( 2 ), 'uAxis' ),
             uInvRadius: this._blurUniforms.uInvRadius,
-            uCrispness: this._blurUniforms.uCrispness
+            uCrispness: this._blurUniforms.uCrispness,
+            uBoudingSphereRadius: this._aoUniforms.uBoudingSphereRadius
         };
 
         this._uniforms = {
@@ -254,9 +257,6 @@
             camera.attachTexture( osg.FrameBufferObject.COLOR_ATTACHMENT0, texture, 0 );
 
             camera.setReferenceFrame( osg.Transform.ABSOLUTE_RF );
-            /*camera.attachRenderBuffer( osg.FrameBufferObject.DEPTH_ATTACHMENT, osg.FrameBufferObject.DEPTH_COMPONENT16 );
-
-            camera.setClearColor( osg.vec4.fromValues( 0.0, 0.0, 0.1, 1.0 ) );*/
 
             if ( depth ) {
 
@@ -502,6 +502,7 @@
             this.createSSAOGUI( ssaoFolder, slidersBounds );
 
             console.log( sceneRadius );
+            this._aoUniforms.uBoudingSphereRadius.setFloat( sceneRadius );
 
         },
 
@@ -542,7 +543,7 @@
 
             sceneFolder.addColor( this._config, 'sceneColor' )
                 .onChange( this.updateSceneColor.bind( this ) );
-            sceneFolder.add( this._config, 'scale', 1.0, 50.0 )
+            sceneFolder.add( this._config, 'scale', 1.0, 500.0 )
                 .onChange( this.updateScale.bind( this ) );
             sceneFolder.add( this._config, 'scene', this._modelList )
                 .onChange( this.updateScene.bind( this, this._config.scene ) );

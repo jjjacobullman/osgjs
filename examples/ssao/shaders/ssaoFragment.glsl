@@ -45,6 +45,7 @@ uniform float uProjScale;
 uniform int uFallOfMethod;
 
 uniform float uRadius;
+uniform float uBoudingSphereRadius;
 uniform float uIntensityDivRadius6;
 uniform float uBias;
 
@@ -266,8 +267,7 @@ void main( void ) {
     // Fade in as the radius reaches ~0px
     //gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
     gl_FragColor.r = aoValue;
-    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / FAR_PLANE), 0.0, 1.0);
-    //gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / uFar), 0.0, 1.0);
+    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0);
 
     // DEBUG
     if (uDebug.x == 1)

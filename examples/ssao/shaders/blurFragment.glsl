@@ -13,6 +13,7 @@ uniform ivec2 uViewport;
 uniform ivec2 uAxis;
 uniform float uInvRadius;
 uniform float uCrispness;
+uniform float uBoudingSphereRadius;
 
 vec4 fetchTextureValue(vec2 ssPosition) {
     vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
@@ -57,18 +58,14 @@ void main() {
 			float z = fetch.g;
 			float weight = 0.3 + gaussian[int(abs(float(r)))];
 
-			float scale = 1.5 * uInvRadius;
+			float scale = 1.5 * uInvRadius * uBoudingSphereRadius;
 			weight *= max(0.0, 1.0 - (uCrispness * EDGE_SHARPNESS * 2000.0) * abs(z - initialZ) * scale);
-			//weight *= max(0.0, 1.0 - abs(z - initialZ));
 
 			sum += fetch.r * weight;
             totalWeight += weight;
 		}
 	}
 
-    //gl_FragColor.rgb = vec3(ao / (totalWeight + EPSILON));
-    //gl_FragColor.a = 1.0;
     gl_FragColor.r = sum / (totalWeight + EPSILON);
     gl_FragColor.g = tmp.g;
-    //gl_FragColor.gba = vec3(1.0);
 }
