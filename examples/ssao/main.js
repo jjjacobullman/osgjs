@@ -29,12 +29,15 @@
     //  get other js file Classes
     var ExampleOSGJS = window.ExampleOSGJS;
 
+
     var OSG = window.OSG;
     var osg = OSG.osg;
     var osgViewer = OSG.osgViewer;
     var osgShader = OSG.osgShader;
     var osgUtil = OSG.osgUtil;
     var Texture = osg.Texture;
+    // DEBUG
+    var textureType = osg.Texture.FLOAT;
 
     var $ = window.$;
     var P = window.P;
@@ -55,7 +58,7 @@
             bias: 0.01,
             intensity: 0.8,
             crispness: 1.0,
-            sceneColor: '#d71515', //'#ECF0F1',
+            sceneColor: '#ECF0F1', // '#d71515',
             debugDepth: false,
             debugPosition: false,
             debugNormal: false,
@@ -91,6 +94,7 @@
         this._aoUniforms = {
             uViewport: this._standardUniforms.uViewport,
             uRadius: osg.Uniform.createFloat1( this._config.radius, 'uRadius' ),
+            uRadius2: osg.Uniform.createFloat1( this._config.radius * this._config.radius, 'uRadius2' ),
             uBias: osg.Uniform.createFloat1( this._config.bias, 'uBias' ),
             uIntensityDivRadius6: osg.Uniform.createFloat1( this._config.intensity, 'uIntensityDivRadius6' ),
             uNear: osg.Uniform.createFloat1( 1.0, 'uNear' ),
@@ -169,9 +173,40 @@
             return group;
         },
 
+        getRstatsOptions: function () {
+
+            var values = {
+                ssao: {
+                    caption: 'ssao',
+                    average: true
+                },
+                blurh: {
+                    caption: 'blurh',
+                    average: true
+                },
+                blurv: {
+                    caption: 'blurv',
+                    average: true
+                }
+            };
+
+            var group = [
+                {
+                    caption: 'group',
+                    values: ['ssao', 'blurh', 'blurv']
+                }
+            ];
+
+            return {
+                values: values,
+                groups: group
+            };
+
+        },
+
         createViewer: function () {
             this._canvas = document.getElementById( 'View' );
-            this._viewer = new osgViewer.Viewer( this._canvas );
+            this._viewer = new osgViewer.Viewer( this._canvas, { rstats: this.getRstatsOptions() } );
             this._viewer.init();
 
             this._viewer.setupManipulator();
@@ -276,7 +311,7 @@
 
         createDepthCameraRTT: function () {
 
-            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, osg.Texture.FLOAT );
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, textureType );
             this._depthTexture = rttDepth;
 
             var cam = this.createCameraRTT( rttDepth, true );
@@ -308,9 +343,9 @@
             // 3. vertical blur on the previously blured texture
 
             // Creates AO textures for each pass
-            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.FLOAT );
-            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.FLOAT );
-            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR, Texture.FLOAT );
+            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, textureType );
+            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, textureType );
+            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR,textureType );
 
             this._aoUniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
@@ -331,12 +366,27 @@
             this._aoBluredTexture = rttAoVerticalFilter;
             this._currentAoTexture = this._aoBluredTexture;
 
-            composer.addPass( aoPass, rttAo );
-            composer.addPass( blurHorizontalPass, rttAoHorizontalFilter );
-            composer.addPass( blurVerticalPass, rttAoVerticalFilter );
+            composer.addPass( aoPass, rttAo ).setFragmentName('ssao');
+            composer.addPass( blurHorizontalPass, rttAoHorizontalFilter ).setFragmentName('blurh');
+            composer.addPass( blurVerticalPass, rttAoVerticalFilter ).setFragmentName('blurv');
 
             //composer.renderToScreen( this._canvas.width, this._canvas.height );
             composer.build();
+
+            var timerGPU = OSG.osg.TimerGPU.instance();
+            var cameras = composer.getChildren();
+            var nbCameras = cameras.length;
+
+            // DEBUG
+            for ( var i = 0; i < nbCameras; ++i ) {
+                var cam = cameras[ i ];
+                var name = cam.getName();
+
+                cam.setInitialDrawCallback( timerGPU.start.bind( timerGPU, name ) );
+                cam.setFinalDrawCallback( timerGPU.end.bind( timerGPU, name ) );
+            }
+            // END DEBUG
+
             return composer;
         },
 
@@ -401,9 +451,11 @@
             var value = this._config.radius;
 
             var uniform = this._aoUniforms.uRadius;
+            var radius2Uniform = this._aoUniforms.uRadius2;
             var invRadiusUniform = this._blurUniforms.uInvRadius;
 
             this.updateFloatData( uniform, null, value );
+            this.updateFloatData( radius2Uniform, null, value * value );
             // Blur needs to take the radius into account
             this.updateFloatData( invRadiusUniform, null, 1.0 / value );
             // Intensity is dependent from the radius
@@ -460,50 +512,56 @@
             var node = this._modelsMap[ this._config.scene ];
             node.dirtyBound();
 
-            var ssaoFolder = this._gui.__folders.SSAO;
-            var ssaoControllers = ssaoFolder.__controllers;
-
-            for ( var i = 0; i < ssaoControllers.length; ++i ) {
-
-                ssaoControllers[ i ].remove();
-
-            }
-            ssaoControllers.length = 0;
-
             var sceneRadius = node.getBoundingSphere().radius();
             var scale = this._baseSceneRadius;
+
+            var ssaoFolder = this._gui.__folders.SSAO;
+            var ssaoControllers = ssaoFolder.__controllers;
 
             var radBounds = this._baseSlidersBounds.radius;
             var biasBounds = this._baseSlidersBounds.bias;
             var intenBounds = this._baseSlidersBounds.intensity;
 
-            var slidersBounds = {};
-            slidersBounds.radius = [ ( radBounds[ 0 ] * sceneRadius ) / scale, ( radBounds[ 1 ] * sceneRadius ) / scale ];
-            slidersBounds.bias = [ ( biasBounds[ 0 ] * sceneRadius ) / scale, ( biasBounds[ 1 ] * sceneRadius ) / scale ];
-            slidersBounds.intensity = [ ( intenBounds[ 0 ] * sceneRadius ) / scale, ( intenBounds[ 1 ] * sceneRadius ) / scale ];
+            var radiusCont = ssaoControllers.filter( function ( cont ) {
+                return cont.property === 'radius';
+            } )[ 0 ];
+            var biasCont = ssaoControllers.filter( function ( cont ) {
+                return cont.property === 'bias';
+            } )[ 0 ];
+            var intensityCont = ssaoControllers.filter( function ( cont ) {
+                return cont.property === 'intensity';
+            } )[ 0 ];
+
+            // Updates the bounds of the sliders
+            radiusCont.__min = ( radBounds[ 0 ] * sceneRadius ) / scale;
+            radiusCont.__max = ( radBounds[ 1 ] * sceneRadius ) / scale;
+            biasCont.__min = ( biasBounds[ 0 ] * sceneRadius ) / scale;
+            biasCont.__max = ( biasBounds[ 1 ] * sceneRadius ) / scale;
+            intensityCont.__min = ( intenBounds[ 0 ] * sceneRadius ) / scale;
+            intensityCont.__max = ( intenBounds[ 1 ] * sceneRadius ) / scale;
 
             if ( prevBsRadius ) {
 
                 this._config.radius = ( sceneRadius * this._config.radius ) / prevBsRadius;
                 this._config.bias = ( sceneRadius * this._config.bias ) / prevBsRadius;
-                this._config.bias = ( this._config.bias < slidersBounds.bias[ 0 ] ) ? slidersBounds.bias[ 0 ] : this._config.bias;
                 this._config.intensity = ( sceneRadius * this._config.intensity ) / prevBsRadius;
 
             } else {
 
-                this._config.radius = slidersBounds.radius[ 0 ];
-                this._config.bias = slidersBounds.bias[ 0 ];
-                this._config.intensity = slidersBounds.intensity[ 0 ];
+                this._config.radius = radiusCont.__min;
+                this._config.bias = biasCont.__min;
+                this._config.intensity = intensityCont.__min;
 
             }
 
+            radiusCont.updateDisplay();
+            biasCont.updateDisplay();
+            intensityCont.updateDisplay();
+
             this.updateRadius();
 
-            this.createSSAOGUI( ssaoFolder, slidersBounds );
-
-            console.log( sceneRadius );
             this._aoUniforms.uBoudingSphereRadius.setFloat( sceneRadius );
-
+            console.log( sceneRadius );
         },
 
         createSSAOGUI: function ( ssaoFolder, slidersBounds ) {
@@ -547,6 +605,8 @@
                 .onChange( this.updateScale.bind( this ) );
             sceneFolder.add( this._config, 'scene', this._modelList )
                 .onChange( this.updateScene.bind( this, this._config.scene ) );
+
+            console.log( sceneFolder );
 
             // Fills the SSAO GUI section
             this.createSSAOGUI( ssaoFolder, this._baseSlidersBounds );
@@ -634,11 +694,6 @@
 
                         stateSetRoot.setTextureAttributeAndModes( 0, self._currentAoTexture );
 
-                        // DEBUG
-                        //console.log( 'Near = ' + zNear + ' | Far = ' + zFar + ' ratio ' + (zFar / zNear));
-                        //console.log( 'pojScale = '  + projScale );
-                        // END DEBUG
-
                         return true;
                     };
                 };
@@ -671,8 +726,11 @@
 
             var folder = this._gui.__folders.Scene;
             var controllers = folder.__controllers;
-            controllers[ controllers.length - 1 ].remove();
-            folder.add( this._config, 'scene', this._modelList ).onChange( this.updateScene.bind( this ) );
+            var controller = controllers.filter( function ( cont ) {
+                return cont.property === 'scene';
+            } )[ 0 ];
+            controller = controller.options( this._modelList );
+            controller.onChange( this.updateScene.bind( this ) );
 
             this.updateScene();
         },

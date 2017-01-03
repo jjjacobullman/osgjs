@@ -9,8 +9,9 @@ precision highp float;
 #define FAR_PLANE 1000.0
 #define EPSILON 0.001
 #define NB_SAMPLES 11
+#define MIN_RADIUS 2.0
 
-# define M_PI 3.14159265358979323846  /* pi */
+# define M_PI 3.14159265358979323846
 
 /*
     1,  1,  1,  2,  3,  2,  5,  2,  3,  2,  // 0
@@ -45,6 +46,7 @@ uniform float uProjScale;
 uniform int uFallOfMethod;
 
 uniform float uRadius;
+uniform float uRadius2;
 uniform float uBoudingSphereRadius;
 uniform float uIntensityDivRadius6;
 uniform float uBias;
@@ -60,8 +62,6 @@ varying vec3 vNormal;
 // DEBUG
 uniform ivec4 uDebug;
 // END DEBUG
-
-float radius2 = 1.0;
 
 //note: normalized uniform random, [0;1[
 //  2 out, 1 in...
@@ -82,7 +82,6 @@ float zValueFromScreenSpacePosition(vec2 ssPosition) {
     float d = texture2D(uDepthTexture, texCoord).r;
 
     return d;
-    //return uNear + (uFar - uNear) * d;
 }
 
 vec3 reconstructCSPosition(vec2 ssP, float z) {
@@ -144,21 +143,17 @@ float fallOffMethod0(float vv, float vn, vec3 normal) {
     //float ao = f * max((vn - uBias) * inversesqrt(EPSILON + vv), 0.0);
     // END HIGH QUALITY
 
-    // DEBUG
-    //float scaledScreenDistance = sqrt(vv) / uFar;
-    // END DEBUG
-
-    float f = max(radius2 - vv, 0.0);
+    float f = max(uRadius2 - vv, 0.0);
     float ao = f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
     return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
 }
 
 float fallOffMethod1(float vv, float vn, vec3 normal) {
-    return float(vv < radius2) * max((vn - uBias) / (EPSILON + vv), 0.0) * radius2 * 0.6;
+    return float(vv < uRadius2) * max((vn - uBias) / (EPSILON + vv), 0.0) * uRadius2 * 0.6;
 }
 
 float fallOffMethod2(float vv, float vn, vec3 normal) {
-    float invRadius2 = 1.0 / radius2;
+    float invRadius2 = 1.0 / uRadius2;
     return 4.0 * max(1.0 - vv * invRadius2, 0.0) * max(vn - uBias, 0.0);
 }
 
@@ -173,7 +168,7 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
     screenSpaceRadius = max(0.75, screenSpaceRadius * diskRadius);
 
     vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
-    // This fixes the self occlusion created when  there is no depth written
+    // This fixes the self occlusion created when there is no depth written
     if (occludingPoint.z <= uNear)
         return 0.0;
 
@@ -213,60 +208,35 @@ void main( void ) {
 
     vec3 cameraSpacePosition = getPosition(ssC);
     vec3 normal = reconstructRawNormal(cameraSpacePosition);
-
-    // EARLY RETURN
-    // If
-    /*if (dot(normal, normal) > pow(cameraSpacePosition.z * cameraSpacePosition.z * 0.00006, 2.0)) {
-        gl_FragColor.r = 1.0;
-        return;
-    }*/
     normal = normalize(normal);
 
-    //float randomAngle = hash21(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
     float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 3.14;
-    //float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 10.0;
+    float ssRadius = - uProjScale * uRadius / max(cameraSpacePosition.z, 0.01);
 
-    float ssRadius = - uProjScale * uRadius / max(cameraSpacePosition.z, 0.2);
-    //ssRadius = clamp(ssRadius, 0.0, 150.0);
     // EARLY RETURN
     // Impossible to compute AO, too few pixels concerned by the radius
-    /*if (ssRadius < 3.0) {
+    if (ssRadius < MIN_RADIUS) {
         gl_FragColor.r = 1.0;
+        gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0);
         return;
-    }*/
+    }
 
-    radius2 = uRadius * uRadius;
     float contrib = 0.0;
     for (int i = 0; i < NB_SAMPLES; ++i) {
         contrib += sampleAO(ssC, cameraSpacePosition, normal, ssRadius, i, randomAngle);
     }
 
     float maxSample_float = float(NB_SAMPLES);
-
-    // DEBUG
-    if (uDebug.w != 0) {
-        float screenSpaceRadius;
-        vec2 offsetUnitVec = computeOffsetUnitVec(0, randomAngle, screenSpaceRadius);
-        screenSpaceRadius = max(0.75, screenSpaceRadius * ssRadius);
-
-        vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
-        vec3 v = occludingPoint - cameraSpacePosition;
-        gl_FragColor = vec4(occludingPoint, 1.0);
-
-        gl_FragColor = vec4(vec3(contrib), 1.0);
-
-        return;
-    }
     // END DEBUG
     //float aoValue = pow(max(0.0, 1.0 - sqrt(contrib * (3.0 / maxSample_float))), 2.0);
     float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
 
     // Anti-tone map to reduce contrast and drag dark region farther
-    //aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
+    aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
 
     // Fade in as the radius reaches ~0px
-    //gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
-    gl_FragColor.r = aoValue;
+    gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
+    //gl_FragColor.r = aoValue;
     gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0);
 
     // DEBUG
