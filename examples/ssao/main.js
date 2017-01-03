@@ -160,13 +160,8 @@
             var box = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 1.0, 1.0, 1.0 );
             box.setName( 'Box' );
 
-            var box2 = osg.createTexturedBoxGeometry( 0.0, 0.0, 0.0, 10.0, 10.0, 10.0 );
-            box2.setName( 'Skybox' );
-            box2.getOrCreateStateSet().setAttributeAndModes( new osg.CullFace( 'DISABLE' ) );
-
             group.addChild( ground );
             group.addChild( box );
-            //group.addChild( box2 );
 
             return group;
         },
@@ -341,9 +336,9 @@
             // 3. vertical blur on the previously blured texture
 
             // Creates AO textures for each pass
-            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.FLOAT );
-            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.FLOAT );
-            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR, Texture.FLOAT );
+            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.UNSIGNED_BYTE );
+            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.UNSIGNED_BYTE );
+            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR, Texture.UNSIGNED_BYTE );
 
             this._aoUniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );

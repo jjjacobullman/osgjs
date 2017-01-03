@@ -16,6 +16,10 @@ float decodeFloatRGBA( vec4 rgba ) {
     return dot( rgba, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0) );
 }
 
+float decodeFloatFromVec2(vec2 p) {
+    return p.x * (256.0 / 257.0) + p.y * (1.0 / 257.0);
+}
+
 float fetchTextureValue(vec2 ssPosition) {
     vec2 texCoord = ssPosition / vec2(uViewport);
     //return decodeFloatRGBA(texture2D(uDepthTexture, texCoord).rgba);

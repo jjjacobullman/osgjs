@@ -67,15 +67,10 @@ float decodeFloatRGBA( vec4 rgba ) {
    return dot( rgba, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0) );
 }
 
-void encodeFloatToVec2(float key, out vec2 p) {
-    // Round to the nearest 1/256.0
-    float temp = floor(key * 256.0);
-
-    // Integer part
-    p.x = temp * (1.0 / 256.0);
-
-    // Fractional part
-    p.y = key * 256.0 - temp;
+void encodeFloatToVec3( float v, out vec3 p ) {
+   p = vec3(1.0, 255.0, 65025.0) * v;
+   p = fract(p);
+   p -= p.yzz * vec3(1.0/255.0,1.0/255.0,1.0/255.0);
 }
 
 float zValueFromScreenSpacePosition(vec2 ssPosition) {
@@ -170,6 +165,7 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
     screenSpaceRadius = max(0.75, screenSpaceRadius * diskRadius);
 
     vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
+
     // This fixes the self occlusion created when there is no depth written
     // the offset added is mandatory because the float encoding function
     // introduces some small precision errors
@@ -216,7 +212,7 @@ void main( void ) {
     // Impossible to compute AO, too few pixels concerned by the radius
     if (ssRadius < MIN_RADIUS) {
         gl_FragColor.r = 1.0;
-        gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0);
+        encodeFloatToVec3(clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0), gl_FragColor.gba);
         return;
     }
 
@@ -225,22 +221,14 @@ void main( void ) {
         contrib += sampleAO(ssC, cameraSpacePosition, normal, ssRadius, i, randomAngle);
     }
 
-    float maxSample_float = float(NB_SAMPLES);
-    // END DEBUG
     //float aoValue = pow(max(0.0, 1.0 - sqrt(contrib * (3.0 / maxSample_float))), 2.0);
-    float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / maxSample_float));
+    float aoValue = max(0.0, 1.0 - contrib * uIntensityDivRadius6 * (5.0 / float(NB_SAMPLES)));
 
     // Anti-tone map to reduce contrast and drag dark region farther
     aoValue = (pow(aoValue, 0.2) + 1.2 * aoValue * aoValue * aoValue * aoValue) / 2.2;
 
-    // Fade in as the radius reaches ~0px
-    gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0));
-    //gl_FragColor.r = aoValue;
-    gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0);
-
-
-    //encodeFloatToVec2(mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0)), gl_FragColor.rg);
-    //encodeFloatToVec2(clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0), gl_FragColor.ba);
+    gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - MIN_RADIUS, 0.0, 1.0));
+    encodeFloatToVec3(clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0), gl_FragColor.gba);
 
     // DEBUG
     if (uDebug.x == 1)
