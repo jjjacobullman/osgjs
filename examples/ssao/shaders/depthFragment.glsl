@@ -22,17 +22,16 @@ float zLinear() {
    float d = gl_FragCoord.z;
 
    //if (d == 0.0)
-     // return uNear;
+      //return uNear;
 
    //zNear * zFar, zNear - zFar, zFar
-   return (uNear * uFar) / (d * (uNear - uFar) + uFar);
-   //return (-uNear * -uFar) / (d * (-uNear + uFar) - uFar);
+   //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+   return d;
 }
 
 void main( void ) {
    //gl_FragColor.r = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
-   gl_FragColor.r = zLinear();
-
-   if (uDebug.z == 1)
-      gl_FragColor.r = gl_FragCoord.z / gl_FragCoord.w;
+   //gl_FragColor.r = zLinear();
+   float zLinear = zLinear();
+   gl_FragColor = encodeFloatRGBA(zLinear);
 }

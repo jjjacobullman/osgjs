@@ -22,7 +22,7 @@ vec4 fetchTextureValue(vec2 ssPosition) {
     return texture2D(uAoTexture, texCoord);
 }
 
-float unpackKey(vec2 p) {
+float decodeFloatFromVec2(vec2 p) {
     return p.x * (256.0 / 257.0) + p.y * (1.0 / 257.0);
 }
 
@@ -40,13 +40,25 @@ float getWeightAtSample(float initialZ, float z, float gaussianWeight) {
 	return weight;
 }
 
+/*float getWeightAtSample(float initialZ, vec4 tap, float gaussianWeight) {
+	float scale = 1.5 * uInvRadius * uBoudingSphereRadius;
+	float z = decodeFloatFromVec2(tap.ba);
+
+	float weight = 0.3 + gaussianWeight;
+	weight *= max(0.0, 1.0 - (uCrispness * EDGE_SHARPNESS * 2000.0) * abs(z - initialZ) * scale);
+
+	return weight;
+}*/
+
 void main() {
 
     ivec2 ssC = ivec2(gl_FragCoord.xy);
 
 	vec4 tmp = fetchTextureValue(gl_FragCoord.xy);
 	float initialZ = tmp.g;
+	//float initialZ = decodeFloatFromVec2(tmp.ba);
 	float sum = tmp.r;
+	//float sum = decodeFloatFromVec2(tmp.rg);
 
 	float gaussian[FILTER_RADIUS + 1];
 	#if FILTER_RADIUS == 3
@@ -93,6 +105,31 @@ void main() {
 	vec4 tap3 = getTapSample(1, ssC);
 	vec4 tap4 = getTapSample(2, ssC);
 	vec4 tap5 = getTapSample(3, ssC);
+
+	/*float weight = getWeightAtSample(initialZ, tap0, g05);
+
+	sum += decodeFloatFromVec2(tap0.rg) * weight;
+	totalWeight += weight;
+
+	weight = getWeightAtSample(initialZ, tap1, g14);
+	sum += decodeFloatFromVec2(tap1.rg) * weight;
+	totalWeight += weight;
+
+	weight = getWeightAtSample(initialZ, tap2, g23);
+	sum += decodeFloatFromVec2(tap2.rg) * weight;
+	totalWeight += weight;
+
+	weight = getWeightAtSample(initialZ, tap3, g23);
+	sum += decodeFloatFromVec2(tap3.rg) * weight;
+	totalWeight += weight;
+
+	weight = getWeightAtSample(initialZ, tap4, g14);
+	sum += decodeFloatFromVec2(tap4.rg) * weight;
+	totalWeight += weight;
+
+	weight = getWeightAtSample(initialZ, tap5, g05);
+	sum += decodeFloatFromVec2(tap5.rg) * weight;
+	totalWeight += weight;*/
 
 	float weight = getWeightAtSample(initialZ, tap0.g, g05);
 

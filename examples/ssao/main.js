@@ -36,8 +36,6 @@
     var osgShader = OSG.osgShader;
     var osgUtil = OSG.osgUtil;
     var Texture = osg.Texture;
-    // DEBUG
-    var textureType = osg.Texture.FLOAT;
 
     var $ = window.$;
     var P = window.P;
@@ -190,12 +188,10 @@
                 }
             };
 
-            var group = [
-                {
-                    caption: 'group',
-                    values: ['ssao', 'blurh', 'blurv']
-                }
-            ];
+            var group = [ {
+                caption: 'group',
+                values: [ 'ssao', 'blurh', 'blurv' ]
+            } ];
 
             return {
                 values: values,
@@ -206,7 +202,9 @@
 
         createViewer: function () {
             this._canvas = document.getElementById( 'View' );
-            this._viewer = new osgViewer.Viewer( this._canvas, { rstats: this.getRstatsOptions() } );
+            this._viewer = new osgViewer.Viewer( this._canvas, {
+                rstats: this.getRstatsOptions()
+            } );
             this._viewer.init();
 
             this._viewer.setupManipulator();
@@ -311,7 +309,7 @@
 
         createDepthCameraRTT: function () {
 
-            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, textureType );
+            var rttDepth = this.createTextureRTT( 'rttDepth', Texture.NEAREST, Texture.UNSIGNED_BYTE );
             this._depthTexture = rttDepth;
 
             var cam = this.createCameraRTT( rttDepth, true );
@@ -343,9 +341,9 @@
             // 3. vertical blur on the previously blured texture
 
             // Creates AO textures for each pass
-            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, textureType );
-            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, textureType );
-            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR,textureType );
+            var rttAo = this.createTextureRTT( 'rttAoTexture', Texture.NEAREST, Texture.FLOAT );
+            var rttAoHorizontalFilter = this.createTextureRTT( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.FLOAT );
+            var rttAoVerticalFilter = this.createTextureRTT( 'rttAoTextureVertical', Texture.LINEAR, Texture.FLOAT );
 
             this._aoUniforms.uDepthTexture = this._depthTexture;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
@@ -366,9 +364,9 @@
             this._aoBluredTexture = rttAoVerticalFilter;
             this._currentAoTexture = this._aoBluredTexture;
 
-            composer.addPass( aoPass, rttAo ).setFragmentName('ssao');
-            composer.addPass( blurHorizontalPass, rttAoHorizontalFilter ).setFragmentName('blurh');
-            composer.addPass( blurVerticalPass, rttAoVerticalFilter ).setFragmentName('blurv');
+            composer.addPass( aoPass, rttAo ).setFragmentName( 'ssao' );
+            composer.addPass( blurHorizontalPass, rttAoHorizontalFilter ).setFragmentName( 'blurh' );
+            composer.addPass( blurVerticalPass, rttAoVerticalFilter ).setFragmentName( 'blurv' );
 
             //composer.renderToScreen( this._canvas.width, this._canvas.height );
             composer.build();

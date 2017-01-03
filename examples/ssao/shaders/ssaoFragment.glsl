@@ -63,25 +63,27 @@ varying vec3 vNormal;
 uniform ivec4 uDebug;
 // END DEBUG
 
-//note: normalized uniform random, [0;1[
-//  2 out, 1 in...
-float hash21(const in vec2 p)
-{
-    vec2 p2 = fract(p * MOD2);
-    p2 += dot(p2.yx, p2.xy+19.19);
-    return fract(p2.x * p2.y);
-}
-
 float decodeFloatRGBA( vec4 rgba ) {
    return dot( rgba, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0) );
+}
+
+void encodeFloatToVec2(float key, out vec2 p) {
+    // Round to the nearest 1/256.0
+    float temp = floor(key * 256.0);
+
+    // Integer part
+    p.x = temp * (1.0 / 256.0);
+
+    // Fractional part
+    p.y = key * 256.0 - temp;
 }
 
 float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
     vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
-    float d = texture2D(uDepthTexture, texCoord).r;
+    float d = decodeFloatRGBA(texture2D(uDepthTexture, texCoord));
 
-    return d;
+    return (uNear * uFar) / (d * (uNear - uFar) + uFar);
 }
 
 vec3 reconstructCSPosition(vec2 ssP, float z) {
@@ -93,7 +95,7 @@ vec3 getPosition(ivec2 ssP) {
     vec2 ssP_float = vec2(ssP);
 
     vec3 P;
-    P.z = texture2D(uDepthTexture, vTexCoord).r;
+    P.z = zValueFromScreenSpacePosition(ssP_float);
 
     // Offset to pixel center
     P = reconstructCSPosition(ssP_float + vec2(0.5), P.z);
@@ -169,17 +171,14 @@ float sampleAO(ivec2 ssC, vec3 camSpacePos, vec3 normal, float diskRadius, int i
 
     vec3 occludingPoint = getOffsetedPixelPos(ssC, offsetUnitVec, screenSpaceRadius);
     // This fixes the self occlusion created when there is no depth written
-    if (occludingPoint.z <= uNear)
+    // the offset added is mandatory because the float encoding function
+    // introduces some small precision errors
+    if (occludingPoint.z <= uNear + 0.01)
         return 0.0;
 
     vec3 v = occludingPoint - camSpacePos;
     float vv = dot(v, v);
     float vn = dot(v, normal);
-
-    // DEBUG
-    //float scaledScreenDistance = length(v) / uFar;
-    //return 1.0 * max(0.0, (dot(normal, v) * uFar) / scaledScreenDistance - uBias) / (1.0 + scaledScreenDistance * scaledScreenDistance);
-    //END DEBUG
 
     if (uFallOfMethod == 0)
         return fallOffMethod0(vv, vn, normal);
@@ -239,12 +238,16 @@ void main( void ) {
     //gl_FragColor.r = aoValue;
     gl_FragColor.g = clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0);
 
+
+    //encodeFloatToVec2(mix(1.0, aoValue, clamp(ssRadius - 3.0, 0.0, 1.0)), gl_FragColor.rg);
+    //encodeFloatToVec2(clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0), gl_FragColor.ba);
+
     // DEBUG
     if (uDebug.x == 1)
         gl_FragColor.rgb = cameraSpacePosition / vec3(2.0);
     if (uDebug.y == 1)
         gl_FragColor.rgb = -normal;
     if (uDebug.z == 1)
-        gl_FragColor.r = texture2D(uDepthTexture, ((gl_FragCoord.xy + 0.25) / vec2(uViewport))).r;
+        gl_FragColor.r = zValueFromScreenSpacePosition(gl_FragCoord.xy);
     //  END DEBUG
 }
