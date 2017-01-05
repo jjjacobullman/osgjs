@@ -9,14 +9,15 @@ precision highp float;
 
 uniform sampler2D uAoTexture;
 
-uniform ivec2 uViewport;
+
+uniform vec2 RenderSize;
 uniform ivec2 uAxis;
 uniform float uInvRadius;
 uniform float uCrispness;
 uniform float uBoudingSphereRadius;
 
 vec4 fetchTextureValue(vec2 ssPosition) {
-    vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
+    vec2 texCoord = ssPosition / vec2(RenderSize);
     return texture2D(uAoTexture, texCoord);
 }
 
@@ -122,4 +123,14 @@ void main() {
 	totalWeight += weight;
 
     gl_FragColor.r = sum / (totalWeight + EPSILON);
+
+    // DEBUG
+    // Temporary code setting the background controller
+    // after the last composer pass
+    if(uAxis.x == 0){
+       gl_FragColor = vec4(gl_FragColor.rrr, 1.0);
+       if(tmp.gba == vec3(0.0))
+	       gl_FragColor = vec4(0.2, 0.2, 0.2, 1.0);
+    }
+    // END DEBUG
 }

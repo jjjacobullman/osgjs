@@ -31,7 +31,8 @@ precision highp float;
 #define NB_SPIRAL_TURNS 3.0
 //#define NB_SPIRAL_TURNS 10.0
 
-uniform ivec2 uViewport;
+
+uniform vec2 RenderSize;
 
 /**
  * Contains information to compute
@@ -59,10 +60,6 @@ uniform float uFar;
 varying vec2 vTexCoord;
 varying vec3 vNormal;
 
-// DEBUG
-uniform ivec4 uDebug;
-// END DEBUG
-
 float decodeFloatRGBA( vec4 rgba ) {
    return dot( rgba, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0) );
 }
@@ -75,10 +72,11 @@ void encodeFloatToVec3( float v, out vec3 p ) {
 
 float zValueFromScreenSpacePosition(vec2 ssPosition) {
 
-    vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(uViewport);
+    vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(RenderSize);
     float d = decodeFloatRGBA(texture2D(uDepthTexture, texCoord));
 
-    return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+    //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
+    return uNear + (uFar - uNear) * d;
 }
 
 vec3 reconstructCSPosition(vec2 ssP, float z) {
@@ -137,12 +135,15 @@ float fallOffMethod0(float vv, float vn, vec3 normal) {
     // HIGH QUALITY
     //float invRadius2 = 1.0 / radius2;
     //float f = max(1.0 - vv * invRadius2, 0.0);
-    //float ao = f * max((vn - uBias) * inversesqrt(EPSILON + vv), 0.0);
+    //return f * max((vn - uBias) * inversesqrt(EPSILON + vv), 0.0);
     // END HIGH QUALITY
 
+    // MEDIUM QUALITY
     float f = max(uRadius2 - vv, 0.0);
     float ao = f * f * f * max((vn - uBias) / (EPSILON + vv), 0.0);
+
     return ao * mix(1.0, max(0.0, 1.5 * normal.z), 0.35);
+    // END MEDIUM QUALITY
 }
 
 float fallOffMethod1(float vv, float vn, vec3 normal) {
@@ -205,7 +206,7 @@ void main( void ) {
     vec3 normal = reconstructRawNormal(cameraSpacePosition);
     normal = normalize(normal);
 
-    float randomAngle = rand(gl_FragCoord.xy / vec2(uViewport)) * 3.14;
+    float randomAngle = rand(gl_FragCoord.xy / vec2(RenderSize)) * 3.14;
     float ssRadius = - uProjScale * uRadius / max(cameraSpacePosition.z, 0.01);
 
     // EARLY RETURN
@@ -230,12 +231,14 @@ void main( void ) {
     gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - MIN_RADIUS, 0.0, 1.0));
     encodeFloatToVec3(clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0), gl_FragColor.gba);
 
+    if (texture2D(uDepthTexture, gl_FragCoord.xy / RenderSize).rgba == vec4(0.0,0.0,0.0, 1.0))
+        gl_FragColor.gba = vec3(0.0);
+
     // DEBUG
-    if (uDebug.x == 1)
-        gl_FragColor.rgb = cameraSpacePosition / vec3(2.0);
-    if (uDebug.y == 1)
-        gl_FragColor.rgb = -normal;
-    if (uDebug.z == 1)
-        gl_FragColor.r = zValueFromScreenSpacePosition(gl_FragCoord.xy);
-    //  END DEBUG
+    // Temporary code setting the background controller
+    // after the last composer pass
+    // gl_FragColor = vec4(gl_FragColor.rrr, 1.0);
+    // if (texture2D(uDepthTexture, gl_FragCoord.xy / RenderSize).rgba == vec4(0.0,0.0,0.0, 1.0))
+    //     gl_FragColor.gba = vec3(0.2, 0.2, 1.0);
+    // END DEBUG
 }
