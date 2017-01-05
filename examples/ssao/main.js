@@ -56,6 +56,11 @@
             uBoundingSphereRadius: osg.Uniform.createFloat1( 1.0, 'uBoudingSphereRadius' ),
         };
 
+        this._mipmapUniforms = {
+            uDepthTexture: null,
+            uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
+        };
+
         this._aoUniforms = {
             uRadius: osg.Uniform.createFloat1( this._config.radius, 'uRadius' ),
             uRadius2: osg.Uniform.createFloat1( this._config.radius * this._config.radius, 'uRadius2' ),
@@ -140,7 +145,7 @@
 
             var group = [ {
                 caption: 'SSAO Postprocess',
-                values: [ 'ssao', 'blurh', 'blurv' ]
+                values: [ 'mipmap', 'ssao', 'blurh', 'blurv' ]
             } ];
 
             return {
@@ -170,6 +175,7 @@
             var shaderNames = [
                 'depthVertex.glsl',
                 'depthFragment.glsl',
+                'mipmapFragment.glsl',
                 'ssaoVertex.glsl',
                 'ssaoFragment.glsl',
                 'blurFragment.glsl',
@@ -273,6 +279,7 @@
 
             var composer = new osgUtil.Composer();
 
+            var mipmapFragment = shaderProcessor.getShader( 'mipmapFragment.glsl' );
             var aoVertex = shaderProcessor.getShader( 'ssaoVertex.glsl' );
             var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
             var blurFragment = shaderProcessor.getShader( 'blurFragment.glsl' );
@@ -287,11 +294,21 @@
                 width: this._canvas.width,
                 height: this._canvas.height
             };
+            var rttMipmapSize = {
+                width: this._canvas.width,
+                height: this._canvas.height * 1.5
+            };
+            var rttMipmap = this.createTexture( 'rttMipmapTexture', Texture.NEAREST, Texture.UNSIGNED_BYTE, rttMipmapSize );
             var rttAo = this.createTexture( 'rttAoTexture', Texture.NEAREST, Texture.UNSIGNED_BYTE, rttSize );
             var rttAoHorizontalFilter = this.createTexture( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.UNSIGNED_BYTE, rttSize );
             var rttAoVerticalFilter = this.createTexture( 'rttAoTextureVertical', Texture.LINEAR, Texture.UNSIGNED_BYTE, rttSize );
 
-            this._aoUniforms.uDepthTexture = this._depthTexture;
+            this._mipmapUniforms.uViewport.setFloat2( [ rttSize.width, rttSize.height ] );
+            this._mipmapUniforms.uDepthTexture = this._depthTexture;
+
+            var mipmapPass = new osgUtil.Composer.Filter.Custom( mipmapFragment, this._mipmapUniforms );
+
+            this._aoUniforms.uDepthTexture = rttMipmap;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
             aoPass.setVertexShader( aoVertex );
 
@@ -307,6 +324,7 @@
             this._aoBluredTexture = rttAoVerticalFilter;
             this._currentAoTexture = this._aoBluredTexture;
 
+            composer.addPass( mipmapPass, rttMipmap ).setFragmentName( 'mipmap' );
             composer.addPass( aoPass, rttAo ).setFragmentName( 'ssao' );
             composer.addPass( blurHorizontalPass, rttAoHorizontalFilter ).setFragmentName( 'blurh' );
             composer.addPass( blurVerticalPass ).setFragmentName( 'blurv' );
