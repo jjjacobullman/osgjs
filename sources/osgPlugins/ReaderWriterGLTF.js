@@ -1075,13 +1075,6 @@ GLTFLoader.prototype = {
                     meshTransformNode.setName( currentNode.getName() );
                     mat4.copy( meshTransformNode.getMatrix(), currentNode.getMatrix() );
 
-                    /*                    var bindShape = this._bindShapeMatrices[ rootJointId ];
-                                        var bindNode = new MatrixTransform();
-
-                                        bindNode.setName( rootJointId + 'bind' );
-                                        mat4.copy( bindNode.getMatrix(), bindShape );
-                                        bindNode.addChild( meshTransformNode );*/
-
                     var geomP = this.loadGLTFPrimitives( meshId, meshTransformNode, rootJointId );
 
                     //skeletonNode.addChild( meshTransformNode );
@@ -1133,29 +1126,29 @@ GLTFLoader.prototype = {
         // 2- Remove each subSkeletons
         var topSkeleton = skeletonTop[ Object.keys( skeletonTop )[ 0 ] ];
         var topSkeletonWorld = topSkeleton.getWorldMatrices( rootNode )[ 0 ];
-        /*                for ( i = 0; i < skeletonKeys.length; ++i ) {
-                            var currentSkel = this._skeletons[ skeletonKeys[ i ] ];
-                            var currentSkelParent = currentSkel.getParents()[ 0 ];
-                            if ( currentSkel !== topSkeleton ) {
-                                console.log( 'Merging ' + skeletonKeys[ i ] + ' in ' + topSkeleton.getName() );
-                                var numChildren = currentSkel.getChildren().length;
-                                currentSkelParent.removeChild( currentSkel );
-                                for ( var j = 0; j < numChildren; ++j ) {
-                                    var child = currentSkel.getChildren()[ j ];
-                                    if ( child.className() === 'MatrixTransform' ) {
-                                        console.log( 'Moving ' + child.name + ' under skeleton' );
-                                        topSkeleton.addChild( child );
-                                    } else
-                                        currentSkelParent.addChild( currentSkel.getChildren()[ j ] );
-                                }
-                                currentSkel.removeChildren();
-                            }
-                        }*/
+        for ( i = 0; i < skeletonKeys.length; ++i ) {
+            var currentSkel = this._skeletons[ skeletonKeys[ i ] ];
+            var currentSkelParent = currentSkel.getParents()[ 0 ];
+            if ( currentSkel !== topSkeleton ) {
+                console.log( 'Merging ' + skeletonKeys[ i ] + ' in ' + topSkeleton.getName() );
+                var numChildren = currentSkel.getChildren().length;
+                currentSkelParent.removeChild( currentSkel );
+                for ( var j = 0; j < numChildren; ++j ) {
+                    var child = currentSkel.getChildren()[ j ];
+                    if ( child.className() === 'MatrixTransform' ) {
+                        console.log( 'Moving ' + child.name + ' under skeleton' );
+                        topSkeleton.addChild( child );
+                    } else
+                        currentSkelParent.addChild( currentSkel.getChildren()[ j ] );
+                }
+                currentSkel.removeChildren();
+            }
+        }
 
-        // move riggeom under skeleton
+        // move riggeom under skeleton; works for Otto when transform between meshes and skeleton
         var rigSkelKeys = Object.keys( this._rigToSkeleton );
         for ( i = 0; i < rigSkelKeys.length; ++i ) {
-            var skeleton = this._rigToSkeleton[ rigSkelKeys[ i ] ];
+            var skeleton = topSkel; //this._rigToSkeleton[ rigSkelKeys[ i ] ];
             var node = this._rigToRigNode[ rigSkelKeys[ i ] ];
             var skelWorld = skeleton.getWorldMatrices( rootNode )[ 0 ];
             var nodeWorld = node.getParents()[ 0 ].getWorldMatrices( rootNode )[ 0 ];
