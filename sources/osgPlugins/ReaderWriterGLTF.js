@@ -409,8 +409,9 @@ GLTFLoader.prototype = {
         var json = this._loadedFiles.glTF;
 
         var animationCallback = null;
-        if ( json.nodes[ callbackName ].jointName )
+        if ( node.className() === 'Bone' )
             animationCallback = new UpdateBone();
+
         else
             animationCallback = new UpdateMatrixTransform();
 
@@ -995,7 +996,7 @@ GLTFLoader.prototype = {
         } );
     },
 
-    loadGLTFNode: function ( nodeId, root ) {
+    loadGLTFNode: function ( nodeId, root, hasParentBone ) {
 
         if ( this._visitedNodes[ nodeId ] )
             return Promise.resolve();
@@ -1011,10 +1012,10 @@ GLTFLoader.prototype = {
         if ( glTFNode.jointName ) {
 
             currentNode = this._bones[ nodeId ];
-
+            hasParentBone = true;
         } else {
 
-            currentNode = new MatrixTransform();
+            currentNode = hasParentBone ? this.loadBone( nodeId ) : new MatrixTransform();
 
         }
 
@@ -1036,7 +1037,7 @@ GLTFLoader.prototype = {
         currentNode.setName( nodeId );
         mat4.copy( currentNode.getMatrix(), this.loadTransform( glTFNode ) );
 
-        if ( glTFNode.jointName )
+        if ( glTFNode.jointName || hasParentBone )
             this.registerUpdateCallback( nodeId, currentNode, glTFNode );
 
         // Recurses on children before
@@ -1046,7 +1047,7 @@ GLTFLoader.prototype = {
 
             for ( i = 0; i < children.length; ++i ) {
 
-                var nodePromise = this.loadGLTFNode( children[ i ], currentNode );
+                var nodePromise = this.loadGLTFNode( children[ i ], currentNode, hasParentBone );
                 promises.push( nodePromise );
 
             }
@@ -1255,7 +1256,7 @@ GLTFLoader.prototype = {
 
                     for ( var j = 0; j < scene.nodes.length; ++j ) {
 
-                        var p = self.loadGLTFNode( scene.nodes[ j ], root );
+                        var p = self.loadGLTFNode( scene.nodes[ j ], root, false );
                         promises.push( p );
 
                     }
