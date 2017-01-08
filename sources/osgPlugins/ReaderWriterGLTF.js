@@ -54,7 +54,7 @@ var GLTFLoader = function () {
     this._inputImgReader = null;
     this._rigToSkeleton = null;
     this._rigToRigNode = null;
-
+    this._boneToSkin = null;
 };
 
 GLTFLoader.WEBGL_COMPONENT_TYPES = {
@@ -129,6 +129,7 @@ GLTFLoader.prototype = {
 
         this._rigToSkeleton = {};
         this._rigToRigNode = {};
+        this._boneToSkin = {};
 
     },
 
@@ -741,6 +742,9 @@ GLTFLoader.prototype = {
                     this._bindShapeMatrices[ rootBoneId ] = skin.bindShapeMatrix;
                     // Adds missing bone to the boneMap
                     bonesToSkin[ rootBoneId ] = skin;
+                    for ( var k = 0; k < skin.jointNames.length; ++k ) {
+                        this._boneToSkin[ skin.jointNames[ k ] ] = rootBoneId;
+                    }
                 }
 
                 this.buildInfluenceMap( rootBoneId, skin );
@@ -972,7 +976,6 @@ GLTFLoader.prototype = {
         var primitives = mesh.primitives;
 
         var promisesArray = [];
-        var self = this;
 
         for ( var i = 0; i < primitives.length; ++i ) {
 
@@ -1064,21 +1067,21 @@ GLTFLoader.prototype = {
                     continue;
 
                 }
-
+                var nodeName = currentNode.getName();
+                this._rigToSkeleton[ nodeName ] = [];
                 for ( var j = 0; j < glTFNode.skeletons.length; ++j ) {
 
                     var rootJointId = glTFNode.skeletons[ j ];
                     var skeletonNode = this._skeletons[ rootJointId ];
 
                     var meshTransformNode = new MatrixTransform();
-                    var nodeName = currentNode.getName();
                     meshTransformNode.setName( currentNode.getName() );
                     mat4.copy( meshTransformNode.getMatrix(), currentNode.getMatrix() );
 
                     var geomP = this.loadGLTFPrimitives( meshId, meshTransformNode, rootJointId );
 
                     //skeletonNode.addChild( meshTransformNode );
-                    this._rigToSkeleton[ nodeName ] = skeletonNode;
+                    this._rigToSkeleton[ nodeName ].push( skeletonNode );
                     this._rigToRigNode[ nodeName ] = meshTransformNode;
                     root.addChild( meshTransformNode );
                     promises.push( geomP );
@@ -1107,52 +1110,88 @@ GLTFLoader.prototype = {
                     return;*/
 
         // if several skeletons, merge them
+        var i = 0;
         var skeletonKeys = Object.keys( this._skeletons );
+        var rigKeys = Object.keys( this._rigToSkeleton );
+        var boneSkinKeys = Object.keys( this._boneToSkin );
+        var skeletonToFinalSkeleton = {};
+        for ( i = 0; i < skeletonKeys.length; ++i ) {
+            skeletonToFinalSkeleton[ skeletonKeys[ i ] ] = skeletonKeys[ i ];
+        }
 
-        // 1- Find top skeleton for each skeleton
-        var skeletonTop = {};
-        for ( var i = 0; i < skeletonKeys.length; ++i ) {
-            var current = this._skeletons[ skeletonKeys[ i ] ];
-            var topSkel = undefined;
-            while ( current ) {
+        // Look for rigGeoms being deformed by several skeletons.
+        for ( i = 0; i < rigKeys.length; ++i ) {
+            if ( this._rigToSkeleton[ rigKeys[ i ] ].length > 1 ) {
+                console.log( 'RigGeometry ' + rigKeys[ i ] + ' is affected by several skeletons' );
+                // Modify skeletonToFinalSkeleton in order to compute invBinds to the good skeletons
+            }
+        }
+        var skelToRemove = [];
+        // WE MUST HAVE ONLY ONE SKELETON PER GEOMETRY HERE NOW!
+        // Remove useless Skeletons
+
+        // Detect nested skeletons
+        for ( i = 0; i < skeletonKeys.length; ++i ) {
+            var current = this._skeletons[ skeletonKeys[ i ] ].getParents()[ 0 ];
+            var parentSkeleton = undefined;
+            console.log( 'Studying ' + skeletonKeys[ i ] );
+            // Go through parent until another skeleton
+            while ( current && current !== rootNode ) {
                 if ( current.className() === 'Skeleton' ) {
-                    topSkel = this._skeletons[ current.getName() ];
+                    parentSkeleton = current;
                 }
                 current = current.getParents()[ 0 ];
+                console.log( '--------UP parent is ' + ( current ? current.getName() : 'undefined' ) );
             }
-            skeletonTop[ skeletonKeys[ i ] ] = topSkel;
+
+            if ( parentSkeleton !== undefined ) {
+                skelToRemove.push( skeletonKeys[ i ] );
+                console.log( 'Parent is ' + parentSkeleton.getName() );
+                skeletonToFinalSkeleton[ skeletonKeys[ i ] ] = parentSkeleton.getName();
+            }
         }
 
-        // 2- Remove each subSkeletons
-        var topSkeleton = skeletonTop[ Object.keys( skeletonTop )[ 0 ] ];
-        var topSkeletonWorld = topSkeleton.getWorldMatrices( rootNode )[ 0 ];
+        for ( i = 0; i < skelToRemove.length; ++i ) {
+            var tempSkel = this._skeletons[ skelToRemove[ i ] ];
+            var tempParent = tempSkel.getParents()[ 0 ];
+            if ( !tempParent )
+                continue;
+            var chs = tempSkel.getChildren();
+            for ( var c = 0; c < chs.length; ++c ) {
+                tempParent.addChild( chs[ c ] );
+                tempParent.removeChild( tempSkel );
+            }
+            console.log( 'Skeleton ' + tempSkel.getName() + ' has been removed' );
+        }
+
+        // Make bones point to the good top skeleton for nested skeletons case
+        for ( i = 0; i < boneSkinKeys.length; ++i ) {
+            this._boneToSkin[ boneSkinKeys[ i ] ] = skeletonToFinalSkeleton[ this._boneToSkin[ boneSkinKeys[ i ] ] ];
+        }
+
+        // We could only compute world for actual top skeletons here
+        var skeletonWorlds = {};
         for ( i = 0; i < skeletonKeys.length; ++i ) {
-            var currentSkel = this._skeletons[ skeletonKeys[ i ] ];
-            var currentSkelParent = currentSkel.getParents()[ 0 ];
-            if ( currentSkel !== topSkeleton ) {
-                console.log( 'Merging ' + skeletonKeys[ i ] + ' in ' + topSkeleton.getName() );
-                var numChildren = currentSkel.getChildren().length;
-                currentSkelParent.removeChild( currentSkel );
-                for ( var j = 0; j < numChildren; ++j ) {
-                    var child = currentSkel.getChildren()[ j ];
-                    if ( child.className() === 'MatrixTransform' ) {
-                        console.log( 'Moving ' + child.name + ' under skeleton' );
-                        topSkeleton.addChild( child );
-                    } else
-                        currentSkelParent.addChild( currentSkel.getChildren()[ j ] );
-                }
-                currentSkel.removeChildren();
-            }
+            skeletonWorlds[ skeletonKeys[ i ] ] = this._skeletons[ skeletonKeys[ i ] ].getWorldMatrices( rootNode )[ 0 ];
         }
 
+        var boneKeys = Object.keys( this._bones );
+        for ( i = 0; i < boneKeys.length; ++i ) {
+            if ( !this._boneToSkin[ boneKeys[ i ] ] )
+                continue;
+            var newInvBind = mat4.multiply( mat4.create(), this._bones[ boneKeys[ i ] ].getInvBindMatrixInSkeletonSpace(), skeletonWorlds[ this._boneToSkin[ boneKeys[ i ] ] ] );
+            this._bones[ boneKeys[ i ] ].setInvBindMatrixInSkeletonSpace( newInvBind );
+        }
+
+        // Check to merge skeletons: start with a dict where key = values and update if several skeletons
         // move riggeom under skeleton; works for Otto when transform between meshes and skeleton
         var rigSkelKeys = Object.keys( this._rigToSkeleton );
         for ( i = 0; i < rigSkelKeys.length; ++i ) {
-            var skeleton = topSkel; //this._rigToSkeleton[ rigSkelKeys[ i ] ];
+            var skeleton = this._skeletons[ skeletonToFinalSkeleton[ this._rigToSkeleton[ rigSkelKeys[ i ] ][ 0 ].getName() ] ];
             var node = this._rigToRigNode[ rigSkelKeys[ i ] ];
             var skelWorld = skeleton.getWorldMatrices( rootNode )[ 0 ];
             var nodeWorld = node.getParents()[ 0 ].getWorldMatrices( rootNode )[ 0 ];
-
+            console.log( 'About to move node ' + node.getName() + '  under its skeleton ' + skeleton.getName() );
             //mat4.invert(nodeWorld, nodeWorld);
             var invSkelWorld = mat4.create();
             mat4.invert( invSkelWorld, skelWorld );
@@ -1162,18 +1201,9 @@ GLTFLoader.prototype = {
             mat4.multiply( node.getMatrix(), correction, node.getMatrix() );
             node.getParents()[ 0 ].removeChild( node );
             skeleton.addChild( node );
-
         }
 
-        //update invBinds
-        //mat4.invert( topSkeletonWorld, topSkeletonWorld );
-        console.log( topSkeletonWorld );
 
-        var boneKeys = Object.keys( this._bones );
-        for ( i = 0; i < boneKeys.length; ++i ) {
-            var newInvBind = mat4.multiply( mat4.create(), this._bones[ boneKeys[ i ] ].getInvBindMatrixInSkeletonSpace(), topSkeletonWorld );
-            this._bones[ boneKeys[ i ] ].setInvBindMatrixInSkeletonSpace( newInvBind );
-        }
     },
 
     readNodeURL: function ( files, options ) {
