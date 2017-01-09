@@ -14,17 +14,14 @@ vec4 encodeFloatRGBA( float v ) {
    return enc;
 }
 
-float zLinear() {
-   float d = gl_FragCoord.z;
-
-   //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
-   return d;
-}
-
 void main( void ) {
    //gl_FragColor.r = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
-   //gl_FragColor.r = zLinear();
-   float zLinear = zLinear();
    //gl_FragColor = encodeFloatRGBA(zLinear);
+
    gl_FragColor = encodeFloatRGBA((-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear));
+
+   // DEBUG
+   //float d = (-vViewVertex.z * vViewVertex.w - uNear) / (uFar - uNear);
+   //gl_FragColor.r = uNear + (uFar - uNear) * d;
+   // END DEBUG
 }

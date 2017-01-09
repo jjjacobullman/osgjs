@@ -3,6 +3,7 @@ precision highp float;
 #endif
 
 #extension GL_OES_standard_derivatives : enable
+#extension GL_EXT_shader_texture_lod : enable
 
 #define MOD2 vec2(443.8975,397.2973)
 
@@ -10,6 +11,9 @@ precision highp float;
 #define EPSILON 0.001
 #define NB_SAMPLES 11
 #define MIN_RADIUS 2.0
+
+#define MAX_MIP_LEVEL 10
+#define LOG_MAX_OFFSET 3
 
 # define M_PI 3.14159265358979323846
 
@@ -75,6 +79,9 @@ float zValueFromScreenSpacePosition(vec2 ssPosition) {
     vec2 texCoord = (ssPosition + vec2(0.25)) / vec2(RenderSize);
     float d = decodeFloatRGBA(texture2D(uDepthTexture, texCoord));
 
+    // DEBUG
+    //return texture2D(uDepthTexture, texCoord, 0.0).r;
+    // END DEBUG
     //return (uNear * uFar) / (d * (uNear - uFar) + uFar);
     return uNear + (uFar - uNear) * d;
 }
@@ -114,6 +121,39 @@ vec2 computeOffsetUnitVec(int sampleNumber, float randomAngle, out float screenS
     screenSpaceRadius = alpha;
     return vec2(cos(angle), sin(angle));
 }
+
+// TEST
+int getMipLevel(float ssR) {
+    // Derivation:
+    //  mipLevel = floor(log(ssR / MAX_OFFSET));
+    return int(clamp(floor(log2(ssR)) - float(LOG_MAX_OFFSET), 0.0, float(MAX_MIP_LEVEL)));
+}
+
+/*vec3 getOffsetedPixelPos(ivec2 ssC, vec2 unitOffset, float screenSpaceRadius) {
+
+    int mipLevel = getMipLevel(screenSpaceRadius);
+
+    ivec2 ssP = ivec2(screenSpaceRadius * unitOffset) + ssC;
+    vec2 ssP_float = vec2(ssP);
+
+    vec2 size;
+    size.x = 1024.0 / (float(mipLevel) + 1.0);
+    size.y = 512.0 / (float(mipLevel) + 1.0);
+
+    float div = pow(2.0, float(mipLevel));
+    //ivec2 mipPoint = clamp(ssP >> mipLevel, ivec2(0), textureSize(CS_Z_buffer, mipLevel) - ivec2(1));
+    ivec2 mipPoint = ivec2(clamp(vec2(ssP) / div, vec2(0.0), size - vec2(1.0)));
+
+    vec3 P;
+    float d = decodeFloatRGBA(texture2D(uDepthTexture, float(mipPoint) / size, float(mipLevel)));
+    P.z = zValueFromScreenSpacePosition(ssP_float);
+
+    // Offset to pixel center
+    P = reconstructCSPosition((vec2(ssP) + vec2(0.5)), P.z);
+
+    return P;
+}*/
+// END TEST
 
 vec3 getOffsetedPixelPos(ivec2 ssC, vec2 unitOffset, float screenSpaceRadius) {
 
@@ -231,14 +271,11 @@ void main( void ) {
     gl_FragColor.r = mix(1.0, aoValue, clamp(ssRadius - MIN_RADIUS, 0.0, 1.0));
     encodeFloatToVec3(clamp(cameraSpacePosition.z * (1.0 / (uBoudingSphereRadius * FAR_PLANE)), 0.0, 1.0), gl_FragColor.gba);
 
-    if (texture2D(uDepthTexture, gl_FragCoord.xy / RenderSize).rgba == vec4(0.0,0.0,0.0, 1.0))
-        gl_FragColor.gba = vec3(0.0);
-
     // DEBUG
     // Temporary code setting the background controller
     // after the last composer pass
-    // gl_FragColor = vec4(gl_FragColor.rrr, 1.0);
-    // if (texture2D(uDepthTexture, gl_FragCoord.xy / RenderSize).rgba == vec4(0.0,0.0,0.0, 1.0))
-    //     gl_FragColor.gba = vec3(0.2, 0.2, 1.0);
+    //gl_FragColor = vec4(gl_FragColor.rrr, 1.0);
+    if (texture2D(uDepthTexture, gl_FragCoord.xy / RenderSize).rgba == vec4(0.0,0.0,0.0, 1.0))
+        gl_FragColor.gba = vec3(0.0);
     // END DEBUG
 }

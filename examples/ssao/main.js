@@ -13,7 +13,7 @@
     var $ = window.$;
     var P = window.P;
 
-    var resolution = 1.0;
+    var MAX_MIP_LEVEL = 4;
 
     var shaderProcessor = new osgShader.ShaderProcessor();
 
@@ -54,11 +54,6 @@
 
         this._globalUniforms = {
             uBoundingSphereRadius: osg.Uniform.createFloat1( 1.0, 'uBoudingSphereRadius' ),
-        };
-
-        this._mipmapUniforms = {
-            uDepthTexture: null,
-            uViewport: osg.Uniform.createFloat2( new Array( 2 ), 'uViewport' ),
         };
 
         this._aoUniforms = {
@@ -128,24 +123,39 @@
 
         getRstatsOptions: function () {
 
-            var values = {
-                ssao: {
-                    caption: 'ssao',
+            var values = {};
+            var passNames = [];
+            for ( var i = 1; i <= MAX_MIP_LEVEL; ++i ) {
+
+                values[ 'mipmap_' + i ] = {
+                    caption: 'mipmap_' + i,
                     average: true
-                },
-                blurh: {
-                    caption: 'blurh',
-                    average: true
-                },
-                blurv: {
-                    caption: 'blurv',
-                    average: true
-                }
+                };
+                passNames.push( 'mipmap_' + i );
+
+            }
+            passNames.push( 'atlas', 'ssao', 'blurh', 'blurv' );
+
+            values.atlas = {
+                caption: 'atlas',
+                average: true
+            };
+            values.ssao = {
+                caption: 'ssao',
+                average: true
+            };
+            values.blurh = {
+                caption: 'blurh',
+                average: true
+            };
+            values.blurv = {
+                caption: 'blurv',
+                average: true
             };
 
             var group = [ {
                 caption: 'SSAO Postprocess',
-                values: [ 'mipmap', 'ssao', 'blurh', 'blurv' ]
+                values: passNames
             } ];
 
             return {
@@ -175,7 +185,8 @@
             var shaderNames = [
                 'depthVertex.glsl',
                 'depthFragment.glsl',
-                'mipmapFragment.glsl',
+                'downsampleFragment.glsl',
+                'mipmapAtlasFragment.glsl',
                 'ssaoVertex.glsl',
                 'ssaoFragment.glsl',
                 'blurFragment.glsl',
@@ -212,7 +223,7 @@
             return defer.promise;
         },
 
-        createTexture: function ( name, filter, type, size ) {
+        createTexture: function ( name, filter, type, size, test ) {
 
             var texture = new osg.Texture();
             texture.setInternalFormatType( type );
@@ -220,7 +231,10 @@
 
             texture.setInternalFormat( osg.Texture.RGBA );
             texture.setMinFilter( filter );
-            texture.setMagFilter( filter );
+            if ( !test )
+                texture.setMagFilter( filter );
+            else
+                texture.setMagFilter( Texture.NEAREST );
             texture.setName( name );
             return texture;
 
@@ -256,10 +270,14 @@
         createDepthCameraRTT: function () {
 
             var rttSize = {
+                //width: this._canvas.width,
                 width: this._canvas.width,
                 height: this._canvas.height
             };
             var rttDepth = this.createTexture( 'rttDepth', Texture.NEAREST, Texture.UNSIGNED_BYTE, rttSize );
+            //var rttDepth = this.createTexture( 'rttDepth', Texture.NEAREST, Texture.FLOAT, rttSize );
+            //var rttDepth = this.createTexture( 'rttDepth', Texture.NEAREST_MIPMAP_NEAREST, Texture.UNSIGNED_BYTE, rttSize, true );
+            //var rttDepth = this.createTexture( 'rttDepth', Texture.NEAREST_MIPMAP_NEAREST, Texture.FLOAT, rttSize, true );
             this._depthTexture = rttDepth;
 
             var cam = this.createCameraRTT( rttDepth, true );
@@ -275,40 +293,92 @@
             return cam;
         },
 
+        buildMipmapPasses: function ( downsampleFragment ) {
+
+            // Creates depth mipmap textures
+            // and link them to composer passes
+            var mipmaps = new Array( MAX_MIP_LEVEL );
+            var uniforms = {
+                uPreviousTexture: this._depthTexture,
+                uPreviousViewport: osg.Uniform.createFloat2( [ this._canvas.width, this._canvas.height ], 'uPreviousViewport' )
+            };
+
+            for ( var i = 1; i <= MAX_MIP_LEVEL; ++i ) {
+
+                var size = {
+                    width: this._canvas.width >> i,
+                    height: this._canvas.height >> i
+                };
+
+                var elt = {
+                    texture: this.createTexture( 'mipmap_' + ( i - 1 ), Texture.NEAREST, Texture.UNSIGNED_BYTE, size ),
+                    pass: new osgUtil.Composer.Filter.Custom( downsampleFragment, uniforms )
+                };
+
+                // Creates uniforms needed by the next pass
+                uniforms = {
+                    uPreviousTexture: elt.texture,
+                    uPreviousViewport: osg.Uniform.createFloat2( [ size.width, size.height ], 'uPreviousViewport' )
+                };
+
+                mipmaps[ i - 1 ] = elt;
+            }
+
+            return mipmaps;
+        },
+
         createComposer: function () {
 
             var composer = new osgUtil.Composer();
 
-            var mipmapFragment = shaderProcessor.getShader( 'mipmapFragment.glsl' );
+            var downsampleFragment = shaderProcessor.getShader( 'downsampleFragment.glsl' );
+            var mipmapAtlasFragment = shaderProcessor.getShader( 'mipmapAtlasFragment.glsl' );
             var aoVertex = shaderProcessor.getShader( 'ssaoVertex.glsl' );
             var aoFragment = shaderProcessor.getShader( 'ssaoFragment.glsl' );
             var blurFragment = shaderProcessor.getShader( 'blurFragment.glsl' );
-
-            // The composer makes 3 passes
-            // 1. noisy AO to texture
-            // 2. horizontal blur on the AO texture
-            // 3. vertical blur on the previously blured texture
 
             // Creates AO textures for each pass
             var rttSize = {
                 width: this._canvas.width,
                 height: this._canvas.height
             };
-            var rttMipmapSize = {
+            var rttAtlasSize = {
                 width: this._canvas.width,
-                height: this._canvas.height * 1.5
+                height: this._canvas.height * 2.0
             };
-            var rttMipmap = this.createTexture( 'rttMipmapTexture', Texture.NEAREST, Texture.UNSIGNED_BYTE, rttMipmapSize );
+            var rttDepthAtlas = this.createTexture( 'rttDepthAtlasTexture', Texture.NEAREST, Texture.UNSIGNED_BYTE, rttAtlasSize );
             var rttAo = this.createTexture( 'rttAoTexture', Texture.NEAREST, Texture.UNSIGNED_BYTE, rttSize );
             var rttAoHorizontalFilter = this.createTexture( 'rttAoTextureHorizontal', Texture.LINEAR, Texture.UNSIGNED_BYTE, rttSize );
             var rttAoVerticalFilter = this.createTexture( 'rttAoTextureVertical', Texture.LINEAR, Texture.UNSIGNED_BYTE, rttSize );
 
-            this._mipmapUniforms.uViewport.setFloat2( [ rttSize.width, rttSize.height ] );
-            this._mipmapUniforms.uDepthTexture = this._depthTexture;
+            // The Composer makes 3 passes
+            // 1. downsamples `MAX_MIP_LEVEL` times the depth
+            // 2. atlases all the downsampled textures
+            // 3. creates the noisy AO texture
+            // 4. horizontal blur on the AO texture
+            // 5. vertical blur on the previously blured texture
 
-            var mipmapPass = new osgUtil.Composer.Filter.Custom( mipmapFragment, this._mipmapUniforms );
+            var mipmapAtlasUniforms = {};
+            mipmapAtlasUniforms.uDepthTexture = this._depthTexture;
+            mipmapAtlasUniforms.uDepthDimensions = osg.Uniform.createFloat2( [ rttSize.width, rttSize.height ], 'uDepthDimensions' );
 
-            this._aoUniforms.uDepthTexture = rttMipmap;
+            // Adds mipmap passes to the composer
+            var mipmapPasses = this.buildMipmapPasses( downsampleFragment );
+            for ( var i = 0; i < mipmapPasses.length; ++i ) {
+
+                var elt = mipmapPasses[ i ];
+                composer.addPass( elt.pass, elt.texture ).setFragmentName( 'mipmap_' + ( i + 1 ) );
+
+                // Adds each mipmap texture as uniform
+                // for the atlas pass
+                mipmapAtlasUniforms[ 'uMipmap' + i ] = elt.texture;
+            }
+
+            var mipmapAtlasPass = new osgUtil.Composer.Filter.Custom( mipmapAtlasFragment, mipmapAtlasUniforms );
+            composer.addPass( mipmapAtlasPass, rttDepthAtlas ).setFragmentName( 'atlas' );
+
+            //this._aoUniforms.uDepthTexture = this._depthTexture;
+            this._aoUniforms.uDepthTexture = rttDepthAtlas;
             var aoPass = new osgUtil.Composer.Filter.Custom( aoFragment, this._aoUniforms );
             aoPass.setVertexShader( aoVertex );
 
@@ -324,7 +394,6 @@
             this._aoBluredTexture = rttAoVerticalFilter;
             this._currentAoTexture = this._aoBluredTexture;
 
-            composer.addPass( mipmapPass, rttMipmap ).setFragmentName( 'mipmap' );
             composer.addPass( aoPass, rttAo ).setFragmentName( 'ssao' );
             composer.addPass( blurHorizontalPass, rttAoHorizontalFilter ).setFragmentName( 'blurh' );
             composer.addPass( blurVerticalPass ).setFragmentName( 'blurv' );
@@ -482,8 +551,6 @@
             var biasBounds = slidersBounds.bias;
             var intensityBounds = slidersBounds.intensity;
 
-            //ssaoFolder.add( this._config, 'ssao' )
-            //    .onChange( this.updateBooleanData.bind( this, this._standardUniforms.uAoFactor ) );
             ssaoFolder.add( this._config, 'fallOfMethod', this._fallOfMethods )
                 .onChange( this.updateIntData.bind( this, this._aoUniforms.uFallOfMethod ) );
             ssaoFolder.add( this._config, 'radius', radiusBounds[ 0 ], radiusBounds[ 1 ] )
@@ -549,8 +616,8 @@
                     var frustum = {};
                     osg.mat4.getFrustum( frustum, m );
 
-                    var width = viewport.width() * resolution;
-                    var height = viewport.height() * resolution;
+                    var width = viewport.width();
+                    var height = viewport.height();
 
                     self._aoUniforms.uNear.setFloat( frustum.zNear );
                     self._aoUniforms.uFar.setFloat( frustum.zFar );
